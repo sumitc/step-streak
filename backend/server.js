@@ -2,6 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const axios = require('axios');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
 
 dotenv.config();
 
@@ -235,8 +238,25 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Backend server running on http://0.0.0.0:${PORT}`);
-  console.log(`🌐 Frontend URL: ${FRONTEND_URL}`);
-  console.log(`📝 See OAUTH_BACKEND_SETUP.md for Google OAuth setup`);
-});
+// Start server with HTTPS if certs exist, otherwise HTTP
+const certsDir = path.join(__dirname, 'certs');
+const certFile = path.join(certsDir, 'sumits-macbook-air.tail2cae07.ts.net.crt');
+const keyFile = path.join(certsDir, 'sumits-macbook-air.tail2cae07.ts.net.key');
+
+if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
+  const sslOptions = {
+    cert: fs.readFileSync(certFile),
+    key: fs.readFileSync(keyFile),
+  };
+  https.createServer(sslOptions, app).listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Backend running on https://0.0.0.0:${PORT} (HTTPS)`);
+    console.log(`🔒 Tailscale: https://sumits-macbook-air.tail2cae07.ts.net:${PORT}`);
+    console.log(`🌐 Frontend URL: ${FRONTEND_URL}`);
+  });
+} else {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Backend running on http://0.0.0.0:${PORT} (HTTP)`);
+    console.log(`⚠️  No TLS certs found in certs/ — using HTTP`);
+    console.log(`🌐 Frontend URL: ${FRONTEND_URL}`);
+  });
+}

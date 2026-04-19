@@ -7,6 +7,9 @@ frontend/dist/
 # Environment variables (contain secrets)
 .env
 
+# TLS certificates (contain private keys)
+certs/
+
 # OS files
 .DS_Store
 Thumbs.db
