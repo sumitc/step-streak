@@ -2,6 +2,10 @@
 
 A web app that rewards users for completing 8,000 steps daily and tracks their streaks.
 
+<p align="center">
+  <img src="screenshots/app-screenshot.png" alt="Step Streak App" width="350">
+</p>
+
 ## Features
 - 📊 Daily step tracking with progress visualization
 - 🔥 Streak tracking (current & longest)
