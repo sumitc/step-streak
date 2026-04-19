@@ -6,11 +6,21 @@ const axios = require('axios');
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:4000';
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:4000', 'http://localhost:3000', 'http://127.0.0.1:4000', 'http://127.0.0.1:3000'],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc)
+    if (!origin) return callback(null, true);
+    // Allow configured frontend and common dev origins
+    const allowed = [FRONTEND_URL, 'http://localhost:4000', 'http://localhost:3000'];
+    if (allowed.includes(origin) || origin.match(/^http:\/\/192\.168\.\d+\.\d+:\d+$/)) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -23,7 +33,7 @@ const userTokens = {};
 // Environment variables
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:4000/auth/callback';
+const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:5001/auth/callback';
 
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
   console.error('❌ Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in .env');
@@ -48,11 +58,11 @@ app.get('/auth/callback', async (req, res) => {
   const { code, state, error } = req.query;
 
   if (error) {
-    return res.send(`<h1>Authentication Error</h1><p>${error}</p><a href="http://localhost:4000">Back to app</a>`);
+    return res.send(`<h1>Authentication Error</h1><p>${error}</p><a href="${FRONTEND_URL}">Back to app</a>`);
   }
 
   if (!code) {
-    return res.send('<h1>Error</h1><p>No authorization code provided</p><a href="http://localhost:4000">Back to app</a>');
+    return res.send(`<h1>Error</h1><p>No authorization code provided</p><a href="${FRONTEND_URL}">Back to app</a>`);
   }
 
   try {
@@ -76,10 +86,10 @@ app.get('/auth/callback', async (req, res) => {
     };
 
     // Redirect back to frontend with success
-    res.redirect(`http://localhost:4000?auth=success&userId=${userId}`);
+    res.redirect(`${FRONTEND_URL}?auth=success&userId=${userId}`);
   } catch (error) {
     console.error('Token exchange error:', error.response?.data || error.message);
-    res.send(`<h1>Authentication Failed</h1><p>Error: ${error.message}</p><a href="http://localhost:4000">Back to app</a>`);
+    res.send(`<h1>Authentication Failed</h1><p>Error: ${error.message}</p><a href="${FRONTEND_URL}">Back to app</a>`);
   }
 });
 
@@ -225,7 +235,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ Backend server running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Backend server running on http://0.0.0.0:${PORT}`);
+  console.log(`🌐 Frontend URL: ${FRONTEND_URL}`);
   console.log(`📝 See OAUTH_BACKEND_SETUP.md for Google OAuth setup`);
 });

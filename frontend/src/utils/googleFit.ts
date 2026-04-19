@@ -1,6 +1,6 @@
 export const getStepsFromGoogleFit = async (): Promise<number> => {
   try {
-    const backendUrl = 'http://localhost:5001';
+    const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5001';
 
     // Get login URL from backend
     const response = await fetch(`${backendUrl}/auth/login`, {
@@ -26,7 +26,7 @@ export const getStepsFromGoogleFit = async (): Promise<number> => {
 
 export const syncStepsFromBackend = async (): Promise<number> => {
   try {
-    const backendUrl = 'http://localhost:5001';
+    const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5001';
     const userId = 'default_user';
     const today = new Date().toISOString().split('T')[0];
 
