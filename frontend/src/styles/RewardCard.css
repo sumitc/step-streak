@@ -1,0 +1,42 @@
+.reward-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  border: 2px solid #e0e0e0;
+  transition: all 0.3s;
+}
+
+.reward-card.earned {
+  background: linear-gradient(135deg, #fff9e6 0%, #fff0e6 100%);
+  border-color: #ffd700;
+  box-shadow: 0 5px 15px rgba(255, 215, 0, 0.2);
+}
+
+.reward-card.locked {
+  opacity: 0.6;
+}
+
+.reward-emoji {
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+}
+
+.reward-card h4 {
+  margin: 10px 0;
+  color: #333;
+  font-size: 0.95rem;
+}
+
+.earned-text {
+  color: #28a745;
+  font-weight: 600;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.locked-text {
+  color: #999;
+  margin: 0;
+  font-size: 0.85rem;
+}

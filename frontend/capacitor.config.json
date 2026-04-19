@@ -1,0 +1,13 @@
+{
+  "appId": "com.stepstreak.app",
+  "appName": "Step Streak",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0
+    }
+  }
+}

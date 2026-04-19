@@ -1,0 +1,32 @@
+.streak-inline {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 15px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 25px;
+  margin-bottom: 25px;
+  color: white;
+  font-weight: 600;
+  font-size: 0.95rem;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.streak-item {
+  white-space: nowrap;
+}
+
+.streak-divider {
+  opacity: 0.6;
+  font-size: 1.2rem;
+}
+
+@media (max-width: 600px) {
+  .streak-inline {
+    flex-direction: row;
+    gap: 12px;
+    padding: 10px 15px;
+    font-size: 0.9rem;
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "step-streak-app",
+  "version": "1.0.0",
+  "description": "Step Streak App - Daily Activity Rewards",
+  "main": "index.js",
+  "scripts": {
+    "dev": "webpack serve --mode development",
+    "build": "webpack --mode production",
+    "start": "webpack serve --mode development"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-react": "^7.28.5",
+    "@babel/preset-typescript": "^7.28.5",
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "axios": "^1.15.0",
+    "babel-loader": "^10.1.1",
+    "css-loader": "^7.1.4",
+    "dotenv-webpack": "^9.0.0",
+    "html-webpack-plugin": "^5.6.7",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "style-loader": "^4.0.0",
+    "typescript": "^6.0.3",
+    "webpack": "^5.106.2",
+    "webpack-cli": "^7.0.2",
+    "webpack-dev-server": "^5.2.3"
+  }
+}
