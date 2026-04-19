@@ -1,5 +1,9 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const webpack = require('webpack');
+const dotenv = require('dotenv');
+
+const env = dotenv.config().parsed || {};
 
 module.exports = {
   entry: './src/index.tsx',
@@ -26,6 +30,10 @@ module.exports = {
   plugins: [
     new HtmlWebpackPlugin({
       template: './public/index.html',
+    }),
+    new webpack.DefinePlugin({
+      'process.env.REACT_APP_BACKEND_URL': JSON.stringify(env.REACT_APP_BACKEND_URL || 'http://localhost:5001'),
+      'process.env.REACT_APP_GOOGLE_FIT_CLIENT_ID': JSON.stringify(env.REACT_APP_GOOGLE_FIT_CLIENT_ID || ''),
     }),
   ],
   devServer: {
