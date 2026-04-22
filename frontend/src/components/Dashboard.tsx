@@ -137,9 +137,8 @@ const Dashboard: React.FC = () => {
   const displaySteps = isViewingPast
     ? (data.dailySteps.find((d) => d.date === viewingDate)?.steps ?? 0)
     : todaySteps;
-  const displayDate = viewingDate !== null
-    ? new Date(viewingDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-    : null;
+  const displayDate = new Date((viewingDate ?? today) + 'T12:00:00')
+    .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
   const percentage = Math.min((displaySteps / GOAL) * 100, 100);
   const exceeded = displaySteps > GOAL;
@@ -178,7 +177,7 @@ const Dashboard: React.FC = () => {
 
         {/* Main: Circular progress */}
         <div className="ring-section">
-          {displayDate && <div className="viewing-date-label">📅 {displayDate}</div>}
+          <div className="viewing-date-label">📅 {displayDate}</div>
           <div className="ring-container">
             <svg viewBox="0 0 200 200" className="progress-ring">
               <circle className="ring-bg" cx="100" cy="100" r="90" />
