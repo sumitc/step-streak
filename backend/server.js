@@ -71,6 +71,18 @@ function saveTokens() {
 }
 
 const userTokens = loadTokens();
+
+// On cloud deployments (ephemeral filesystem), bootstrap from env var if no tokens file exists.
+// Set GOOGLE_REFRESH_TOKEN in your hosting platform's env vars after first local OAuth login.
+if (Object.keys(userTokens).length === 0 && process.env.GOOGLE_REFRESH_TOKEN) {
+  userTokens['default_user'] = {
+    accessToken: null,
+    refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
+    expiryTime: 0, // forces refresh on first API call
+  };
+  console.log('🔑 Bootstrapped token from GOOGLE_REFRESH_TOKEN env var');
+}
+
 console.log(`🔑 Loaded tokens for users: [${Object.keys(userTokens).join(', ') || 'none'}]`);
 
 // --- Timezone-aware day boundary helpers ---
