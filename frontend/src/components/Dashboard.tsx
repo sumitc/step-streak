@@ -137,7 +137,7 @@ const Dashboard: React.FC = () => {
   const displaySteps = isViewingPast
     ? (data.dailySteps.find((d) => d.date === viewingDate)?.steps ?? 0)
     : todaySteps;
-  const displayDate = isViewingPast
+  const displayDate = viewingDate !== null
     ? new Date(viewingDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
     : null;
 
