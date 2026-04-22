@@ -1,24 +1,31 @@
-import React, { useEffect, useRef } from 'react';
-import { StreakCycle, DayStatus } from '../types';
+import React, { useEffect, useRef, useState } from 'react';
+import { StreakCycle, DayStatus, CycleDay } from '../types';
+import { getLocalDateString } from '../utils/dateUtils';
 import '../styles/StreakDots.css';
 
 interface StreakDotsProps {
   cycle: StreakCycle;
   totalPoints: number;
+  onDaySelect?: (date: string | null) => void;
   onCelebrationDone?: () => void;
 }
 
-const DOT_LABELS = ['1', '2', '3', '4', '5', '6', '7'];
+const DOT_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 const DOT_SIZE = 32;
 const DOT_GAP = 6;
 
-const StreakDots: React.FC<StreakDotsProps> = ({ cycle, totalPoints, onCelebrationDone }) => {
-  // Initialize with current state so no false animations fire on first mount
+const formatDate = (dateStr: string): string => {
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+};
+
+const StreakDots: React.FC<StreakDotsProps> = ({ cycle, onDaySelect, onCelebrationDone }) => {
   const prevDaysRef = useRef<DayStatus[]>(cycle.days.map((d) => d.status));
   const prevMilestonesRef = useRef(cycle.milestones);
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const today = getLocalDateString();
 
-  // Detect newly-completed dots and milestone events after each render
   useEffect(() => {
     const prev = prevDaysRef.current;
     const newlyComplete: number[] = [];
@@ -53,18 +60,30 @@ const StreakDots: React.FC<StreakDotsProps> = ({ cycle, totalPoints, onCelebrati
   const lastCompleteIdx = cycle.days.reduce((last, d, i) => d.status === 'complete' ? i : last, -1);
   const progressLineWidth = lastCompleteIdx >= 0 ? lastCompleteIdx * (DOT_SIZE + DOT_GAP) : 0;
 
+  const getDotClass = (day: CycleDay, i: number): string => {
+    const isToday = day.date === today && day.status === 'pending';
+    const base = isToday ? 'streak-dot streak-dot--today' : `streak-dot streak-dot--${day.status}`;
+    return selectedIdx === i ? `${base} streak-dot--selected` : base;
+  };
+
+  const handleDotClick = (day: CycleDay, i: number) => {
+    const next = selectedIdx === i ? null : i;
+    setSelectedIdx(next);
+    onDaySelect?.(next !== null ? day.date : null);
+  };
+
   return (
     <div className="streak-dots-bar">
       <div className="streak-dots-track">
-        {/* Grey baseline + green progress line */}
         <div className="streak-line-bg" />
         <div className="streak-line-progress" style={{ width: progressLineWidth }} />
         {cycle.days.map((day, i) => (
           <div
             key={day.date}
             id={`dot-${i}`}
-            className={`streak-dot streak-dot--${day.status}`}
-            title={`Day ${i + 1} · ${day.date}`}
+            className={getDotClass(day, i)}
+            title={formatDate(day.date)}
+            onClick={() => handleDotClick(day, i)}
           >
             {day.status === 'complete' ? '✓' : day.status === 'missed' ? '✕' : DOT_LABELS[i]}
           </div>

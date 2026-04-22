@@ -71,6 +71,37 @@
   background: #2a2a2a;
   border: 1.5px solid #555;
   color: #666;
+  cursor: pointer;
+}
+
+/* ── Today dot — amber + heartbeat ──────────────────────────────────────── */
+.streak-dot--today {
+  background: #2a2a2a;
+  border: 2px solid #FF9800;
+  color: #FF9800;
+  cursor: pointer;
+  animation: heartbeat 1.8s ease-in-out infinite;
+}
+
+@keyframes heartbeat {
+  0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.5); }
+  30%  { transform: scale(1.12); box-shadow: 0 0 0 6px rgba(255, 152, 0, 0); }
+  60%  { transform: scale(1);    box-shadow: 0 0 0 0 rgba(255, 152, 0, 0); }
+  100% { transform: scale(1); }
+}
+
+/* ── Selected dot — white glow ring ─────────────────────────────────────── */
+.streak-dot--selected {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.7), 0 0 12px rgba(255, 255, 255, 0.3);
+}
+
+.streak-dot--today.streak-dot--selected {
+  box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.9), 0 0 14px rgba(255, 152, 0, 0.4);
+}
+
+.streak-dot--complete,
+.streak-dot--missed {
+  cursor: pointer;
 }
 
 /* ── Pop animation when dot turns green ──────────────────────────────────── */

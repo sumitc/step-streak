@@ -18,6 +18,7 @@ const Dashboard: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [celebrating, setCelebrating] = useState(false);
+  const [viewingDate, setViewingDate] = useState<string | null>(null);
   const initDone = useRef(false);
 
   const refreshFromStorage = useCallback(() => {
@@ -131,9 +132,18 @@ const Dashboard: React.FC = () => {
 
   if (!data) return <div className="loading">Loading...</div>;
 
-  const percentage = Math.min((todaySteps / GOAL) * 100, 100);
-  const exceeded = todaySteps > GOAL;
-  const overSteps = todaySteps - GOAL;
+  const today = getLocalDateString();
+  const isViewingPast = viewingDate !== null && viewingDate !== today;
+  const displaySteps = isViewingPast
+    ? (data.dailySteps.find((d) => d.date === viewingDate)?.steps ?? 0)
+    : todaySteps;
+  const displayDate = isViewingPast
+    ? new Date(viewingDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    : null;
+
+  const percentage = Math.min((displaySteps / GOAL) * 100, 100);
+  const exceeded = displaySteps > GOAL;
+  const overSteps = displaySteps - GOAL;
   const circumference = 2 * Math.PI * 90;
   const strokeOffset = circumference - (percentage / 100) * circumference;
 
@@ -163,10 +173,12 @@ const Dashboard: React.FC = () => {
         <StreakDots
           cycle={data.currentCycle}
           totalPoints={data.totalPoints}
+          onDaySelect={(date) => setViewingDate(date)}
         />
 
         {/* Main: Circular progress */}
         <div className="ring-section">
+          {displayDate && <div className="viewing-date-label">📅 {displayDate}</div>}
           <div className="ring-container">
             <svg viewBox="0 0 200 200" className="progress-ring">
               <circle className="ring-bg" cx="100" cy="100" r="90" />
@@ -180,13 +192,15 @@ const Dashboard: React.FC = () => {
             <div className="ring-content">
               {exceeded ? (
                 <>
-                  <div className="step-number exceeded">{todaySteps.toLocaleString()}</div>
+                  <div className="step-number exceeded">{displaySteps.toLocaleString()}</div>
                   <div className="step-label">🎉 +{overSteps.toLocaleString()} bonus!</div>
                 </>
               ) : (
                 <>
-                  <div className="step-number">{todaySteps.toLocaleString()}</div>
-                  <div className="step-label">{(GOAL - todaySteps).toLocaleString()} to go</div>
+                  <div className="step-number">{displaySteps.toLocaleString()}</div>
+                  <div className="step-label">
+                    {isViewingPast ? (displaySteps >= GOAL ? '✅ Goal met' : `${(GOAL - displaySteps).toLocaleString()} short`) : `${(GOAL - displaySteps).toLocaleString()} to go`}
+                  </div>
                 </>
               )}
             </div>

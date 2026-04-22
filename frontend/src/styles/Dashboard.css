@@ -92,6 +92,13 @@ html, body, #root {
   align-items: center;
 }
 
+.viewing-date-label {
+  font-size: 0.75rem;
+  color: #aaa;
+  margin-bottom: 6px;
+  letter-spacing: 0.03em;
+}
+
 .ring-container {
   position: relative;
   width: min(65vw, 260px);
