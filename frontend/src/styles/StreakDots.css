@@ -2,7 +2,7 @@
 .streak-dots-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
   padding: 10px 16px;
   background: rgba(255, 255, 255, 0.06);
   border-radius: 12px;
@@ -11,25 +11,9 @@
   overflow: visible;
 }
 
-.streak-dots-label {
-  font-size: 0.72rem;
-  color: #aaa;
-  white-space: nowrap;
-  min-width: 72px;
-}
-
 .streak-dots-track {
   display: flex;
   gap: 6px;
-  flex: 1;
-}
-
-.streak-dots-progress {
-  font-size: 0.72rem;
-  color: #aaa;
-  white-space: nowrap;
-  min-width: 28px;
-  text-align: right;
 }
 
 /* ── Individual dot ──────────────────────────────────────────────────────── */
