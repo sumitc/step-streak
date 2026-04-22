@@ -30,8 +30,11 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Store tokens in memory (in production, use database/session store)
-const userTokens = {};
+// Request logger
+app.use((req, _res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  next();
+});
 
 // Environment variables
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -41,6 +44,97 @@ const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:5001/auth/cal
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
   console.error('❌ Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in .env');
   console.error('See OAUTH_BACKEND_SETUP.md for configuration');
+}
+
+// --- Token persistence ---
+const TOKENS_FILE = path.join(__dirname, 'tokens.json');
+
+function loadTokens() {
+  try {
+    if (fs.existsSync(TOKENS_FILE)) {
+      return JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf8'));
+    }
+  } catch (err) {
+    console.error('⚠️  Failed to load tokens.json:', err.message);
+  }
+  return {};
+}
+
+function saveTokens() {
+  try {
+    const tmp = TOKENS_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(userTokens, null, 2));
+    fs.renameSync(tmp, TOKENS_FILE); // atomic write
+  } catch (err) {
+    console.error('⚠️  Failed to save tokens.json:', err.message);
+  }
+}
+
+const userTokens = loadTokens();
+console.log(`🔑 Loaded tokens for users: [${Object.keys(userTokens).join(', ') || 'none'}]`);
+
+// --- Timezone-aware day boundary helpers ---
+
+// Returns the UTC offset in ms for a given timezone at a specific moment.
+// Positive = ahead of UTC (e.g. IST = +19800000)
+function getOffsetMs(timezone, date) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      timeZoneName: 'shortOffset',
+    }).formatToParts(date);
+    const offsetStr = parts.find(p => p.type === 'timeZoneName')?.value || 'GMT+0';
+    const match = offsetStr.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+    if (!match) return 0;
+    const sign = match[1] === '+' ? 1 : -1;
+    const h = parseInt(match[2], 10);
+    const m = parseInt(match[3] || '0', 10);
+    return sign * (h * 60 + m) * 60 * 1000;
+  } catch {
+    return 0;
+  }
+}
+
+// Returns { startTimeMillis, endTimeMillis } for a calendar day in the user's timezone.
+// e.g. "2026-04-21" in IST (UTC+5:30) → 2026-04-20T18:30:00Z … 2026-04-21T18:29:59Z
+function getDayBoundaries(dateStr, timezone) {
+  const refDate = new Date(`${dateStr}T12:00:00.000Z`); // noon UTC — safe from DST edge cases
+  const offsetMs = getOffsetMs(timezone, refDate);
+  const startTimeMillis = Date.parse(`${dateStr}T00:00:00.000Z`) - offsetMs;
+  const endTimeMillis = startTimeMillis + 24 * 60 * 60 * 1000 - 1000;
+  return { startTimeMillis, endTimeMillis };
+}
+
+// Returns today's date string in the given timezone (YYYY-MM-DD)
+function getTodayInTimezone(timezone) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date());
+}
+
+// --- Google Fit fetch helper (reused by /api/steps and /api/steps/batch) ---
+async function fetchStepsForDate(userId, dateStr, timezone) {
+  const token = userTokens[userId].accessToken;
+  const { startTimeMillis, endTimeMillis } = getDayBoundaries(dateStr, timezone);
+
+  const response = await axios.post(
+    'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
+    {
+      aggregateBy: [{ dataTypeName: 'com.google.step_count.delta' }],
+      bucketByTime: { durationMillis: 86400000 },
+      startTimeMillis,
+      endTimeMillis,
+    },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+
+  let totalSteps = 0;
+  if (response.data.bucket?.length > 0) {
+    response.data.bucket.forEach((bucket) => {
+      bucket.dataset?.[0]?.point?.forEach((point) => {
+        totalSteps += point.value?.[0]?.intVal || 0;
+      });
+    });
+  }
+  return totalSteps;
 }
 
 // Auth Routes
@@ -87,6 +181,7 @@ app.get('/auth/callback', async (req, res) => {
       refreshToken: refresh_token,
       expiryTime: Date.now() + (expires_in * 1000),
     };
+    saveTokens();
 
     // Redirect back to frontend with success
     res.redirect(`${FRONTEND_URL}?auth=success&userId=${userId}`);
@@ -123,6 +218,7 @@ app.post('/auth/callback', async (req, res) => {
       refreshToken: refresh_token,
       expiryTime: Date.now() + (expires_in * 1000),
     };
+    saveTokens();
 
     res.json({
       success: true,
@@ -136,66 +232,87 @@ app.post('/auth/callback', async (req, res) => {
 });
 
 // API Routes
+
+// Auth status — lets the frontend verify tokens are still valid without a full sync
+app.get('/auth/status', (req, res) => {
+  const { userId = 'default_user' } = req.query;
+  const stored = userTokens[userId];
+  res.json({ authenticated: !!(stored && stored.refreshToken) });
+});
+
 app.post('/api/steps', async (req, res) => {
-  const { userId = 'default_user', date } = req.body;
+  const { userId = 'default_user', date, timezone = 'UTC' } = req.body;
 
   if (!userTokens[userId]) {
     return res.status(401).json({ error: 'Not authenticated. Please login first.' });
   }
 
+  const targetDate = date || getTodayInTimezone(timezone);
+
   try {
-    const token = userTokens[userId].accessToken;
-    const targetDate = date || new Date().toISOString().split('T')[0];
-    const startTime = new Date(`${targetDate}T00:00:00`).getTime();
-    const endTime = new Date(`${targetDate}T23:59:59`).getTime();
-
-    const response = await axios.post(
-      'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
-      {
-        aggregateBy: [{
-          dataTypeName: 'com.google.step_count.delta',
-        }],
-        bucketByTime: { durationMillis: 86400000 },
-        startTimeMillis: startTime,
-        endTimeMillis: endTime,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    let totalSteps = 0;
-    if (response.data.bucket && response.data.bucket.length > 0) {
-      response.data.bucket.forEach((bucket) => {
-        if (bucket.dataset && bucket.dataset[0] && bucket.dataset[0].point) {
-          bucket.dataset[0].point.forEach((point) => {
-            if (point.value && point.value[0]) {
-              totalSteps += point.value[0].intVal || 0;
-            }
-          });
-        }
-      });
-    }
-
-    res.json({ date: targetDate, steps: totalSteps });
+    const steps = await fetchStepsForDate(userId, targetDate, timezone);
+    res.json({ date: targetDate, steps });
   } catch (error) {
-    console.error('Google Fit API error:', error.response?.data || error.message);
-    
     if (error.response?.status === 401) {
-      // Token expired, try to refresh
       try {
         await refreshAccessToken(userId);
-        // Retry the request
-        return res.json({ error: 'Token refreshed. Please retry.' });
+        const steps = await fetchStepsForDate(userId, targetDate, timezone);
+        res.json({ date: targetDate, steps });
       } catch (refreshError) {
         return res.status(401).json({ error: 'Authentication expired. Please login again.' });
       }
+    } else {
+      console.error('Google Fit API error:', error.response?.data || error.message);
+      res.status(500).json({ error: 'Failed to fetch steps from Google Fit' });
     }
-
-    res.status(500).json({ error: 'Failed to fetch steps from Google Fit' });
   }
+});
+
+app.post('/api/steps/batch', async (req, res) => {
+  const { userId = 'default_user', dates, timezone = 'UTC' } = req.body;
+
+  if (!userTokens[userId]) {
+    return res.status(401).json({ error: 'Not authenticated. Please login first.' });
+  }
+
+  if (!Array.isArray(dates) || dates.length === 0) {
+    return res.status(400).json({ error: 'dates must be a non-empty array' });
+  }
+
+  const results = [];
+  for (const dateStr of dates) {
+    let fetched = false;
+    // Retry up to 2 times on transient errors (503, 429, network)
+    for (let attempt = 1; attempt <= 2 && !fetched; attempt++) {
+      try {
+        const steps = await fetchStepsForDate(userId, dateStr, timezone);
+        results.push({ date: dateStr, steps });
+        fetched = true;
+      } catch (error) {
+        const status = error.response?.status;
+        if (status === 401) {
+          try {
+            await refreshAccessToken(userId);
+            const steps = await fetchStepsForDate(userId, dateStr, timezone);
+            results.push({ date: dateStr, steps });
+            fetched = true;
+          } catch {
+            return res.status(401).json({ error: 'Authentication expired. Please login again.' });
+          }
+        } else if ((status === 503 || status === 429) && attempt < 2) {
+          console.warn(`Transient ${status} for ${dateStr}, retrying after 1s...`);
+          await new Promise(r => setTimeout(r, 1000));
+        } else {
+          console.error(`Failed to fetch steps for ${dateStr}:`, error.response?.data || error.message);
+          // Omit from results so backfill retries this date next time
+        }
+      }
+    }
+  }
+
+  console.log(`[batch] dates requested: ${dates.join(', ')}`);
+  console.log(`[batch] results: ${JSON.stringify(results)}`);
+  res.json({ results });
 });
 
 app.post('/api/refresh-token', async (req, res) => {
@@ -225,6 +342,7 @@ async function refreshAccessToken(userId) {
   const { access_token, expires_in } = response.data;
   userTokens[userId].accessToken = access_token;
   userTokens[userId].expiryTime = Date.now() + (expires_in * 1000);
+  saveTokens();
 }
 
 // Health check
@@ -239,7 +357,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start server with HTTPS if certs exist, otherwise HTTP
-const certsDir = path.join(__dirname, 'certs');
+const certsDir = path.join(__dirname, 'cert');
 const certFile = path.join(certsDir, 'sumits-macbook-air.tail2cae07.ts.net.crt');
 const keyFile = path.join(certsDir, 'sumits-macbook-air.tail2cae07.ts.net.key');
 

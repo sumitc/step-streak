@@ -20,4 +20,7 @@ export interface UserData {
   streakData: StreakData;
   rewards: Reward[];
   lastSyncDate: string;
+  lastSyncTimestamp: string; // ISO timestamp of last successful sync (for cooldown logic)
+  isAuthenticated: boolean;
+  userId: string;
 }
