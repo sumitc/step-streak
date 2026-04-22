@@ -271,6 +271,190 @@ const session = await joinSession({
             },
         },
         {
+            name: "step_streak_setup_guide",
+            description: "Returns a full first-time setup guide for the Step Streak project — how to get Google OAuth credentials, configure Tailscale HTTPS, create .env files, install dependencies, and run the servers.",
+            parameters: { type: "object", properties: {} },
+            skipPermission: true,
+            handler: async () => `
+# Step Streak — First-Time Setup Guide
+
+## Prerequisites
+- Node.js 18+
+- A Google account
+- Tailscale installed (for HTTPS on local network / mobile access)
+
+---
+
+## Step 1 — Google Cloud Project & OAuth Credentials
+
+1. Go to https://console.cloud.google.com/
+2. Create a new project (or select existing).
+3. Enable the **Fitness API**:
+   - Search "Fitness API" in the API Library → Enable it.
+4. Create OAuth credentials:
+   - Go to **APIs & Services → Credentials → Create Credentials → OAuth Client ID**
+   - Application type: **Web application**
+   - Add an **Authorized redirect URI**:
+     \`https://<your-tailscale-hostname>:5001/auth/callback\`
+     (e.g. \`https://sumits-macbook-air.tail2cae07.ts.net:5001/auth/callback\`)
+   - Click Create → copy the **Client ID** and **Client Secret**
+5. Configure the OAuth consent screen:
+   - Go to **APIs & Services → OAuth consent screen**
+   - Set User Type to **External** (or Internal if GSuite)
+   - Add scope: \`https://www.googleapis.com/auth/fitness.activity.read\`
+   - Add your Google account as a **Test user** (required while app is in Testing mode)
+
+---
+
+## Step 2 — Tailscale HTTPS cert
+
+Tailscale provides free TLS certs for your machine's Tailscale hostname.
+
+1. Install Tailscale: https://tailscale.com/download
+2. Log in: \`tailscale up\`
+3. Find your hostname: \`tailscale status\` (looks like \`yourname-macbook-air.tail2cae07.ts.net\`)
+4. Provision the TLS cert:
+   \`\`\`bash
+   sudo tailscale cert <your-tailscale-hostname>
+   \`\`\`
+   This creates two files — copy them into the backend:
+   \`\`\`bash
+   mkdir -p backend/cert
+   sudo cp /etc/ssl/certs/<hostname>.crt backend/cert/
+   sudo cp /etc/ssl/private/<hostname>.key backend/cert/
+   sudo chown $(whoami) backend/cert/*
+   \`\`\`
+   The cert files must be named exactly \`<hostname>.crt\` and \`<hostname>.key\`.
+
+---
+
+## Step 3 — Backend .env
+
+Create \`backend/.env\` (copy from \`backend/.env.example\`):
+\`\`\`
+GOOGLE_CLIENT_ID=<paste Client ID from Step 1>
+GOOGLE_CLIENT_SECRET=<paste Client Secret from Step 1>
+REDIRECT_URI=https://<your-tailscale-hostname>:5001/auth/callback
+FRONTEND_URL=http://localhost:4000
+PORT=5001
+\`\`\`
+
+---
+
+## Step 4 — Frontend .env
+
+Create \`frontend/.env\` (copy from \`frontend/.env.example\`):
+\`\`\`
+REACT_APP_BACKEND_URL=https://<your-tailscale-hostname>:5001
+REACT_APP_GOOGLE_FIT_CLIENT_ID=<paste Client ID from Step 1>
+\`\`\`
+
+⚠️  After editing .env, always restart the webpack dev server — env vars are baked in at build time.
+
+---
+
+## Step 5 — Install dependencies
+
+\`\`\`bash
+cd backend && npm install
+cd ../frontend && npm install
+\`\`\`
+
+---
+
+## Step 6 — Start the servers
+
+\`\`\`bash
+# Backend (persists after shell exits)
+cd backend && nohup node server.js > /tmp/backend.log 2>&1 & disown $!
+
+# Frontend (persists after shell exits)
+cd frontend && nohup npm run dev > /tmp/webpack-dev.log 2>&1 & disown $!
+\`\`\`
+
+Or use the \`step_streak_start_servers\` tool which does this for you.
+
+---
+
+## Step 7 — Authenticate
+
+1. Open http://localhost:4000
+2. Click **Connect Google Fit**
+3. Complete the OAuth consent flow in the browser
+4. You'll be redirected back to the app — the backend stores your tokens in \`backend/tokens.json\`
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| "Backend server not responding" | Check backend is running: \`step_streak_server_status\` |
+| OAuth redirect fails | Ensure REDIRECT_URI in .env matches exactly what's in Google Cloud Console |
+| Steps always 0 | Timezone mismatch — ensure frontend sends \`timezone\` (IANA name) to backend |
+| Stale step data | Hit manual sync — backfill always re-fetches last 6 days |
+| Backend loses tokens on restart | tokens.json missing or unreadable — check \`backend/tokens.json\` exists |
+| TLS handshake error | cert files not found or hostname mismatch — re-run \`tailscale cert\` |
+`,
+        },
+        {
+            name: "step_streak_check_env",
+            description: "Checks whether the backend and frontend .env files exist and have all required keys. Reports what is missing or empty.",
+            parameters: { type: "object", properties: {} },
+            skipPermission: true,
+            handler: async () => {
+                const fs = await import("fs");
+                const path = await import("path");
+
+                const checks = [
+                    {
+                        label: "backend/.env",
+                        file: path.join(BACKEND_DIR, ".env"),
+                        required: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "REDIRECT_URI", "FRONTEND_URL", "PORT"],
+                    },
+                    {
+                        label: "frontend/.env",
+                        file: path.join(FRONTEND_DIR, ".env"),
+                        required: ["REACT_APP_BACKEND_URL"],
+                    },
+                ];
+
+                const lines = [];
+                for (const { label, file, required } of checks) {
+                    if (!fs.existsSync(file)) {
+                        lines.push(`❌ ${label} — FILE MISSING (copy from .env.example and fill in values)`);
+                        continue;
+                    }
+                    const content = fs.readFileSync(file, "utf8");
+                    const parsed = Object.fromEntries(
+                        content.split("\n")
+                            .filter(l => l.includes("=") && !l.startsWith("#"))
+                            .map(l => [l.split("=")[0].trim(), l.split("=").slice(1).join("=").trim()])
+                    );
+                    const missing = required.filter(k => !parsed[k] || parsed[k].startsWith("your_") || parsed[k] === "");
+                    if (missing.length === 0) {
+                        lines.push(`✅ ${label} — all required keys present`);
+                    } else {
+                        lines.push(`⚠️  ${label} — missing or placeholder values:`);
+                        missing.forEach(k => lines.push(`   • ${k}`));
+                    }
+                }
+
+                // Also check cert
+                const certDir = path.join(BACKEND_DIR, "cert");
+                if (!fs.existsSync(certDir) || fs.readdirSync(certDir).length === 0) {
+                    lines.push("⚠️  backend/cert/ — no TLS cert files found (run: tailscale cert <hostname>)");
+                } else {
+                    const certs = fs.readdirSync(certDir);
+                    lines.push(`✅ backend/cert/ — ${certs.join(", ")}`);
+                }
+
+                lines.push("");
+                lines.push("Run step_streak_setup_guide for full setup instructions.");
+                return lines.join("\n");
+            },
+        },
+        {
             name: "step_streak_read_logs",
             description: "Read the last N lines from the Step Streak backend or frontend dev server logs.",
             parameters: {
