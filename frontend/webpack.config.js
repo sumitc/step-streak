@@ -3,7 +3,12 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const webpack = require('webpack');
 const dotenv = require('dotenv');
 
-const env = dotenv.config().parsed || {};
+const fileEnv = dotenv.config().parsed || {};
+// Merge file-based env with OS-level env vars (so Render/CI dashboard vars work)
+const env = {
+  REACT_APP_BACKEND_URL: process.env.REACT_APP_BACKEND_URL || fileEnv.REACT_APP_BACKEND_URL,
+  REACT_APP_GOOGLE_FIT_CLIENT_ID: process.env.REACT_APP_GOOGLE_FIT_CLIENT_ID || fileEnv.REACT_APP_GOOGLE_FIT_CLIENT_ID,
+};
 
 module.exports = {
   entry: './src/index.tsx',
