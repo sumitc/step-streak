@@ -14,6 +14,31 @@
 .streak-dots-track {
   display: flex;
   gap: 6px;
+  position: relative;
+  align-items: center;
+}
+
+/* Grey baseline — runs from center of dot 0 to center of dot 6 */
+.streak-line-bg,
+.streak-line-progress {
+  position: absolute;
+  top: 50%;
+  left: 16px; /* half of 32px dot */
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.streak-line-bg {
+  right: 16px;
+  background: #444;
+}
+
+.streak-line-progress {
+  background: #4CAF50;
+  transition: width 0.4s ease;
 }
 
 /* ── Individual dot ──────────────────────────────────────────────────────── */
@@ -28,6 +53,8 @@
   font-weight: 600;
   transition: background 0.3s, color 0.3s;
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .streak-dot--complete {

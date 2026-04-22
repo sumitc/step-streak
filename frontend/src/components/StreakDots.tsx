@@ -10,6 +10,9 @@ interface StreakDotsProps {
 
 const DOT_LABELS = ['1', '2', '3', '4', '5', '6', '7'];
 
+const DOT_SIZE = 32;
+const DOT_GAP = 6;
+
 const StreakDots: React.FC<StreakDotsProps> = ({ cycle, totalPoints, onCelebrationDone }) => {
   // Initialize with current state so no false animations fire on first mount
   const prevDaysRef = useRef<DayStatus[]>(cycle.days.map((d) => d.status));
@@ -47,9 +50,15 @@ const StreakDots: React.FC<StreakDotsProps> = ({ cycle, totalPoints, onCelebrati
     prevMilestonesRef.current = { ...cycle.milestones };
   });
 
+  const lastCompleteIdx = cycle.days.reduce((last, d, i) => d.status === 'complete' ? i : last, -1);
+  const progressLineWidth = lastCompleteIdx >= 0 ? lastCompleteIdx * (DOT_SIZE + DOT_GAP) : 0;
+
   return (
     <div className="streak-dots-bar">
       <div className="streak-dots-track">
+        {/* Grey baseline + green progress line */}
+        <div className="streak-line-bg" />
+        <div className="streak-line-progress" style={{ width: progressLineWidth }} />
         {cycle.days.map((day, i) => (
           <div
             key={day.date}
