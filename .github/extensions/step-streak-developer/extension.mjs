@@ -5,25 +5,39 @@ import { joinSession } from "@github/copilot-sdk/extension";
 import { execSync, spawn } from "child_process";
 
 // ─── Project paths ────────────────────────────────────────────────────────────
-const PROJECTS_DIR = "/Users/sumitc/projects";
-const BACKEND_DIR  = `${PROJECTS_DIR}/step-streak-backend`;
-const FRONTEND_DIR = `${PROJECTS_DIR}/step-streak-app`;
-const BACKEND_URL  = "https://step-streak-backend.onrender.com";
-const FRONTEND_URL = "http://localhost:4000";
+const PROJECTS_DIR  = "/Users/sumitc/projects";
+const BACKEND_DIR   = `${PROJECTS_DIR}/step-streak-backend`;
+const FRONTEND_DIR  = `${PROJECTS_DIR}/step-streak/frontend`;   // active Render-deployed frontend
+const BACKEND_URL   = "https://step-streak-backend.onrender.com";
+const FRONTEND_URL  = "https://step-streak.onrender.com";
 
 // ─── Architecture knowledge ───────────────────────────────────────────────────
 const ARCHITECTURE = `
-# Step Streak — Architecture Reference
+# Step Streak — Architecture Reference (schema v4, updated 2026-04)
 
 ## Overview
-Step Streak is a daily 8,000-step challenge app.
-- Frontend: React + TypeScript, bundled with Webpack, packaged as Android APK via Capacitor
-- Backend: Node.js / Express, HTTPS via Tailscale TLS cert, proxies Google Fit API
+Step Streak is a daily 8,000-step challenge app synced with Google Fit.
+- Frontend: React + TypeScript, Webpack, deployed to Render (step-streak.onrender.com)
+- Backend: Node.js / Express, deployed to Render (step-streak-backend.onrender.com), proxies Google Fit API
+- No native app currently — runs as a web app; Capacitor APK path is legacy/unused
 
-## Project Directories
-- step-streak-backend/   → Express API server (port 5001, HTTPS)
-- step-streak-app/       → React + Capacitor frontend (port 4000 in dev)
-- step-streak/           → Legacy/reference (not active)
+## Active project directories
+- step-streak/frontend/   → React/TS frontend (the live deployed one)
+- step-streak-backend/    → Express backend (port 5001 locally, Render in prod)
+- step-streak-app/        → LEGACY — old Capacitor frontend, not deployed, ignore
+- step-streak/            → git repo root (frontend lives here, shared with backend on Render)
+
+## Deployment
+- Both services deployed on Render (free tier)
+- Frontend build: cd frontend && npm run build → produces dist/ (index.html + hashed bundles)
+- Backend: node server.js
+- Render free tier: backend sleeps after 15 min idle; first request after sleep may 
+  be slow or lack CORS headers (race condition on wake-up). Not a bug — expected.
+- Bundle filenames use [contenthash] for cache-busting (not [hash])
+- Env vars: set in Render dashboard as OS env vars. webpack.config.js reads from 
+  process.env first, then dotenv() for local dev. Never rely solely on dotenv().
+
+---
 
 ## Backend (step-streak-backend/server.js)
 
@@ -42,136 +56,221 @@ Step Streak is a daily 8,000-step challenge app.
 ### Token persistence
 - Tokens stored in tokens.json (gitignored), loaded on startup
 - Atomic write: write to tokens.json.tmp then rename (avoids corruption)
-- userTokens object: { [userId]: { accessToken, refreshToken, expiryTime } }
+- userTokens: { [userId]: { accessToken, refreshToken, expiryTime } }
 - userId defaults to 'default_user' (single-user app)
 
 ### Timezone-aware day boundaries
-- CRITICAL: Google Fit uses epoch milliseconds. Must pass IST day boundaries, not UTC.
-- getDayBoundaries(dateStr, timezone) computes correct UTC epoch range for a local calendar day
+- CRITICAL: Google Fit uses epoch ms. Must pass IST day boundaries, not UTC.
+- getDayBoundaries(dateStr, timezone) computes correct UTC epoch range for a local day
 - e.g. "2026-04-21" in IST (UTC+5:30) → 2026-04-20T18:30:00Z to 2026-04-21T18:29:59Z
-- Using UTC boundaries gives WRONG (partial) step counts — this caused a major bug
+- Using UTC boundaries gives WRONG (partial) step counts
 
 ### Error handling
-- 503/429 from Google Fit: retry once after 1s
+- 503/429: retry once after 1s
 - 401: refresh token, retry once; if still 401, return 401 to frontend
-- On batch failure: omit the date from results (don't save 0), so backfill retries it next time
-
-### HTTPS / TLS
-- Cert: cert/sumits-macbook-air.tail2cae07.ts.net.crt (Tailscale cert)
-- Key:  cert/sumits-macbook-air.tail2cae07.ts.net.key
-- Falls back to HTTP if certs not found
-- OAuth REDIRECT_URI must match what's registered in Google Cloud Console
+- On batch failure: omit the date (don't save 0 steps), so backfill retries later
 
 ### CORS
-- Allows: FRONTEND_URL, localhost:4000, localhost:3000, 192.168.x.x:xxxx pattern
+- Allows: FRONTEND_URL (Render URL), localhost:4000, localhost:3000, 192.168.x.x pattern
 - Credentials: true
 
-## Frontend (step-streak-app/src/)
+---
+
+## Frontend (step-streak/frontend/src/)
 
 ### Key files
 | File | Purpose |
 |------|---------|
-| utils/dateUtils.ts    | getLocalDateString(), getTimezone(), getLastNDates(n) |
-| utils/storage.ts      | localStorage CRUD, updateStreaks(), batchUpdateSteps() |
-| utils/googleFit.ts    | Backend API calls: checkAuthStatus, syncStepsFromBackend, syncStepsBatch |
-| utils/syncManager.ts  | Sync orchestration: syncOnOpen, forceSyncToday, syncBackfill |
-| components/Dashboard.tsx | Main UI, Capacitor appStateChange listener |
-| types.ts              | UserData, DailySteps, StreakData, Reward |
+| types.ts                     | All interfaces; schema version 4 |
+| utils/dateUtils.ts           | getLocalDateString(), getTimezone(), getLastNDates(n) |
+| utils/storage.ts             | localStorage CRUD, rebuildCycles(), batchUpdateSteps(), migrations |
+| utils/googleFit.ts           | Backend API calls: checkAuthStatus, syncStepsFromBackend, syncStepsBatch |
+| utils/syncManager.ts         | Sync orchestration: syncOnOpen, forceSyncToday, syncBackfill |
+| components/Dashboard.tsx     | Main UI; viewingDate state drives ring for selected dot |
+| components/StreakDots.tsx     | 7-dot progress bar with connecting line, animations, dot click |
+| components/PointsCounter.tsx | Animated count-up points display (lives in header) |
+| styles/StreakDots.css         | Dot styles, lines, heartbeat, glow, confetti |
+| styles/PointsCounter.css     | Points counter styling |
+| styles/Dashboard.css         | Main layout, ring, header, goal label, viewing-date-label |
 
-### Sync flow
-1. App open/resume → syncOnOpen() (15-min cooldown, verifies auth first)
-2. Manual sync button → forceSyncToday() (no cooldown) + syncBackfill() in background
-3. Capacitor appStateChange listener fires syncOnOpen() on every foreground resume
+---
 
-### syncOnOpen
-- Reads isAuthenticated from localStorage
-- Calls /auth/status to verify backend still has tokens (clears local auth if not)
-- If shouldSync() (15-min cooldown passed): calls /api/steps for today
-- Returns { steps, synced }
+## Schema v4 — TypeScript types (types.ts)
 
-### forceSyncToday
-- Same as syncOnOpen but skips cooldown check
-- Used by manual sync button
+\`\`\`ts
+type DayStatus = 'pending' | 'complete' | 'missed';
 
-### syncBackfill
-- Re-fetches all 6 prior days (today-1 through today-6) every time it runs
-- Why always re-fetch: old data may have been saved with wrong timezone (UTC vs local)
-  and Google Fit data can arrive late
-- Calls /api/steps/batch with all 6 dates
-- Non-blocking (.then() in Dashboard)
+interface CycleDay {
+  date: string;       // YYYY-MM-DD
+  status: DayStatus;
+}
 
-### Streak calculation (storage.ts updateStreaks)
-- currentStreak: walks sortedDays (most recent first) checking expectedDate == actual date
-  on each step. Breaks on any gap or day below 8000 steps threshold.
-- longestStreak: sliding window over sorted array, checks consecutive dates explicitly
-- CRITICAL: dates must be sorted before streak calculation — unsorted gives wrong results
-- CRITICAL: use getLocalDateString() not toISOString().split('T')[0] — UTC date != IST date
-  in the first 5h30m of the IST day
+interface StreakCycle {
+  cycleNumber: number;      // weeks since firstOpenDate's Monday (0-indexed)
+  startDate: string;        // always the Monday of the week (YYYY-MM-DD)
+  days: CycleDay[];         // exactly 7 entries (Mon–Sun)
+  milestones: {
+    consecutive3: boolean;  // ever had 3 consecutive complete days
+    consecutive5: boolean;  // ever had 5 consecutive complete days
+    perfectWeek: boolean;   // all days up to today complete
+  };
+  pointsAwarded: number;    // cached derived total for this cycle
+}
 
-### Date handling rules (CRITICAL)
-- NEVER use new Date().toISOString().split('T')[0] — this gives UTC date
-- ALWAYS use getLocalDateString() from dateUtils.ts — uses local timezone
-- ALWAYS pass timezone to backend (getTimezone() returns IANA name e.g. "Asia/Kolkata")
-- Streak bugs caused by timezone mismatch are silent and hard to detect
-
-### localStorage schema (STORAGE_KEY = 'step_streak_data')
-\`\`\`json
-{
-  "dailySteps":     [{ "date": "2026-04-22", "steps": 10844 }],
-  "streakData":     { "currentStreak": 7, "longestStreak": 7, "lastUpdateDate": "2026-04-22" },
-  "rewards":        [{ "days": 3, "earned": true }, { "days": 5, "earned": true }, { "days": 7, "earned": false }],
-  "lastSyncDate":   "2026-04-22T16:30:49.887Z",
-  "lastSyncTimestamp": "2026-04-22T16:30:49.887Z",
-  "isAuthenticated": true,
-  "userId": "default_user"
+interface UserData {
+  schemaVersion: number;        // current = 4; bump on breaking changes
+  dailySteps: DailySteps[];     // raw step data from Google Fit
+  firstOpenDate: string;        // YYYY-MM-DD; date user first opened app (never changes)
+  totalPoints: number;          // lifetime points, derived from all cycles
+  currentCycle: StreakCycle;
+  pastCycles: StreakCycle[];
+  lastSyncDate: string;
+  lastSyncTimestamp: string;    // ISO timestamp for 15-min cooldown
+  isAuthenticated: boolean;
+  userId: string;
 }
 \`\`\`
 
-### Environment (.env)
-- REACT_APP_BACKEND_URL=https://sumits-macbook-air.tail2cae07.ts.net:5001
-- REACT_APP_GOOGLE_FIT_CLIENT_ID=<client_id>
-- Note: env vars are baked in at webpack build time. After changing .env, restart dev server.
+---
 
-## Dev server startup
-- Backend: cd step-streak-backend && nohup node server.js > /tmp/backend.log 2>&1 & disown $!
-- Frontend: cd step-streak-app && nohup npm run dev > /tmp/webpack-dev.log 2>&1 & disown $!
-- Use nohup + disown — plain & causes process to die when shell exits
-- Backend logs: /tmp/backend.log
-- Frontend logs: /tmp/webpack-dev.log
+## Cycle logic (storage.ts)
 
-## Google Cloud Console
-- OAuth Client ID: 655331959412-s8nf4u3a9htnd72lmt72ud1b4dbf89e2.apps.googleusercontent.com
-- Authorized redirect URI: https://sumits-macbook-air.tail2cae07.ts.net:5001/auth/callback
-- Scopes: https://www.googleapis.com/auth/fitness.activity.read
+### Mon–Sun calendar weeks
+- Cycles are fixed Mon–Sun calendar weeks, not rolling 7 days from install.
+- getWeekMonday(dateStr): returns the Monday of the week containing dateStr.
+- rebuildCycles(): fully rebuilds currentCycle + pastCycles from scratch on every update.
+  This makes it idempotent — no double-award risk.
+
+### buildCycle(startDate, stepsMap, firstOpenDate)
+- Creates a 7-day cycle from startDate (always a Monday).
+- For each day:
+  - If date > today → status = 'pending'
+  - If date < firstOpenDate AND no Google Fit data → status = 'pending' (never auto-miss pre-install days)
+  - If date < firstOpenDate AND Google Fit data exists → evaluate against 8000 threshold
+  - If date is today or any past day with data → evaluate against threshold
+  - If past day with no data → status = 'missed'
+
+### Points system (computed in rebuildCycles)
+- +10 per complete day
+- +30 bonus at 3 consecutive complete days (once per cycle)
+- +50 bonus at 5 consecutive complete days (once per cycle)
+- +100 bonus for perfect week (all days up to today complete)
+- totalPoints = sum of pointsAwarded across all pastCycles + currentCycle
+
+### Schema migrations
+- migrateFromLegacy(): converts old streakData/rewards format to v4
+- migrateToV4(): called for any schemaVersion < 4; sets firstOpenDate, rebuilds cycles
+- saveData() is called after migration so it only runs once
+
+---
+
+## Sync flow
+
+1. App open / resume → syncOnOpen() (15-min cooldown, verifies auth first)
+2. Manual sync button → forceSyncToday() (no cooldown) + syncBackfill() in background
+3. syncBackfill re-fetches last 7 days (today-1 through today-6) via /api/steps/batch
+
+### syncOnOpen
+- Reads isAuthenticated from localStorage
+- Calls /auth/status to verify backend still has tokens
+- If shouldSync() (15-min cooldown): calls /api/steps for today
+- Returns { steps, synced }
+
+### syncBackfill
+- Always re-fetches all 6 prior days (not just missing ones)
+- Old data may have wrong timezone; Google Fit data can arrive late
+- On batch failure: omit the date (don't save 0), retry next time
+
+---
+
+## UI: 7-Dot Streak Bar (StreakDots.tsx)
+
+### Visual states per dot
+- complete: green fill + ✓
+- missed: dark grey + ✕
+- pending (future): dark bg, grey border, day letter (M/T/W/T/F/S/S)
+- pending (today): amber border, amber letter, heartbeat pulse animation (1.8s infinite)
+- selected (any): white glow ring (amber glow for today's dot)
+
+### Connecting line
+- Grey baseline: streak-line-bg (spans full 7 dots, left:16px to right:16px)
+- Green progress: streak-line-progress, width = lastCompleteIdx * (DOT_SIZE + DOT_GAP)
+  where DOT_SIZE=32, DOT_GAP=6. Each step = 38px.
+
+### Dot click interaction
+- Click a dot → calls onDaySelect(date) prop → Dashboard sets viewingDate state
+- Click same dot again → onDaySelect(null) → Dashboard resets to today
+- Dashboard uses viewingDate to drive the main ring display (no new component needed)
+
+### Animations
+- triggerDotPop(i): scale bounce when a dot turns green
+- triggerMilestoneBurst(label): floating "+30" / "+50" label
+- triggerPerfectWeek(): confetti (60 pieces) + large "🎉 Perfect Week!" burst
+- prevDaysRef MUST be initialized from current cycle state (not []) to avoid
+  triggering animations for all dots on first mount
+
+---
+
+## UI: Main Ring (Dashboard.tsx)
+
+### viewingDate state
+- null by default → ring shows today's live steps
+- Set by StreakDots.onDaySelect(date) when a dot is clicked
+- displaySteps = viewingDate is past → look up in dailySteps array, else todaySteps
+- displayDate always visible (defaults to today on load) as "📅 Mon, Apr 21" above ring
+
+### Ring labels when viewing a past day
+- Below goal: "X,xxx short" instead of "X,xxx to go"
+- Met goal: "✅ Goal met" instead of bonus text
+- isViewingPast flag controls which text to show
+
+---
 
 ## Known gotchas & learnings
-1. TIMEZONE BUG: Most insidious bug. toISOString().split('T')[0] returns UTC date.
-   In IST (UTC+5:30), this is wrong for the first 5h30m of every local day.
-   Always use getLocalDateString() on frontend. Always use getDayBoundaries() on backend.
 
-2. STALE DATA: Old data fetched with wrong timezone can't be detected by looking at step counts.
-   Solution: syncBackfill always re-fetches all 6 prior days (not just missing ones).
+1. TIMEZONE BUG (most insidious): toISOString().split('T')[0] returns UTC date.
+   In IST (UTC+5:30), wrong for first 5h30m of every local day.
+   → Always use getLocalDateString() on frontend; getDayBoundaries() on backend.
 
-3. TOKEN LOSS ON RESTART: In-memory tokens lost when backend crashes. 
-   Solution: persist to tokens.json with atomic write.
+2. STALE DATA: Old data fetched with wrong timezone can't be detected by step count.
+   → syncBackfill always re-fetches all 6 prior days.
 
-4. BACKEND DIES WITH SHELL: Using & without nohup/disown kills process when shell exits.
-   Solution: always use nohup + disown for both servers.
+3. TOKEN LOSS ON RESTART: In-memory tokens lost when backend restarts.
+   → Persist to tokens.json with atomic write.
 
-5. ENV VARS NOT UPDATED: After editing .env, the running webpack dev server still has old values baked in.
-   Solution: always restart the dev server after .env changes.
+4. BACKEND SLEEPS ON RENDER FREE TIER: Wake-up requests may lack CORS headers.
+   → Not a bug; first open may be slow. Show loading state gracefully.
 
-6. REACT DOESN'T REMOUNT ON RESUME: useEffect on mount doesn't fire when app resumes from background.
-   Solution: Capacitor App.addListener('appStateChange', ...) in a separate useEffect.
+5. ENV VARS ON RENDER: Render sets env vars at OS level. webpack.config.js must read
+   process.env directly, not rely only on dotenv(). Always check both sources.
 
-7. STREAK CALC NEEDS SORTED DATA: The old longestStreak calc ran on unsorted array — gave wrong results.
-   Solution: always sort dailySteps by date before any streak calculation.
+6. REACT DOESN'T REMOUNT ON RESUME: useEffect on mount doesn't fire on background resume.
+   → Capacitor App.addListener('appStateChange', ...) in a separate useEffect.
 
-8. 503 FROM GOOGLE FIT: Transient. Don't save 0 steps for failed dates — omit them so backfill retries.
+7. CORS PREFLIGHT ON GET: Adding Content-Type: application/json to a GET triggers
+   a CORS preflight OPTIONS request. Remove it from GET calls.
+   → Fixed in googleFit.ts — no Content-Type header on GET /auth/login.
 
-9. isAuthenticated IN LOCALSTORAGE CAN DRIFT: localStorage says authenticated but backend lost tokens.
-   Solution: always call /auth/status before any sync attempt.
+8. LARGE FILE REWRITES LEAVE DUPLICATE CODE: If edit tool's old_str only matches the
+   start of a large block, the new content prepends and old content remains.
+   → After any large rewrite, count lines and grep for duplicate symbol declarations.
+   → babel parse error "Identifier has already been declared" is the symptom.
+
+9. prevDaysRef INIT: Must be initialized with cycle.days.map(d=>d.status) at mount,
+   not []. Empty init causes all dots to appear "newly complete" and fire animations.
+
+10. PRE-INSTALL DAYS: Days before firstOpenDate with no Google Fit data should be 
+    'pending', not 'missed'. Only mark missed if we have data showing < 8000 steps.
+    → Prevents the anchor bug where backfill data fell outside the cycle window.
+
+11. isAuthenticated IN LOCALSTORAGE CAN DRIFT: localStorage says authenticated but
+    backend lost tokens (e.g. Render redeploy wipes tokens.json).
+    → Always call /auth/status before any sync attempt.
+
+12. PERFECT WEEK DEFINITION: Days up to today all complete — do NOT require future
+    pending dots to be complete. Check: days.filter(d => d.date <= today).every(...)
 `;
+
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function isStepStreakCwd(cwd) {
@@ -483,12 +582,14 @@ Or use the \`step_streak_start_servers\` tool which does this for you.
             return {
                 additionalContext: `
 You are working on the Step Streak project. Key facts:
-- Backend dir: ${BACKEND_DIR} (Node/Express, port 5001 HTTPS)
-- Frontend dir: ${FRONTEND_DIR} (React+TS+Capacitor, port 4000 dev)
-- Backend URL: ${BACKEND_URL} (Tailscale TLS cert)
-- Logs: /tmp/backend.log, /tmp/webpack-dev.log
-- Always use nohup + disown when starting servers (plain & dies with shell)
+- Active frontend: ${FRONTEND_DIR} (React+TS, deployed to Render)
+- Backend dir: ${BACKEND_DIR} (Node/Express, deployed to Render)
+- Frontend URL: ${FRONTEND_URL}
+- Backend URL: ${BACKEND_URL}
+- Schema version: 4 — Mon–Sun cycle weeks, firstOpenDate, totalPoints, currentCycle, pastCycles
+- step-streak-app/ is LEGACY — do not edit it; all active frontend work is in step-streak/frontend/
 - CRITICAL timezone rule: never use toISOString().split('T')[0] — always use getLocalDateString()
+- CRITICAL after large file rewrites: grep for duplicate symbol declarations (babel parse error symptom)
 - Call step_streak_get_context for full architecture reference.
 - Call step_streak_server_status to check if servers are up before debugging.
 `,
