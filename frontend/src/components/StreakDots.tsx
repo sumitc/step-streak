@@ -47,12 +47,8 @@ const StreakDots: React.FC<StreakDotsProps> = ({ cycle, totalPoints, onCelebrati
     prevMilestonesRef.current = { ...cycle.milestones };
   });
 
-  const completedCount = cycle.days.filter((d) => d.status === 'complete').length;
-  const cycleLabel = `Challenge ${cycle.cycleNumber + 1}`;
-
   return (
     <div className="streak-dots-bar">
-      <span className="streak-dots-label">{cycleLabel}</span>
       <div className="streak-dots-track">
         {cycle.days.map((day, i) => (
           <div
@@ -65,7 +61,6 @@ const StreakDots: React.FC<StreakDotsProps> = ({ cycle, totalPoints, onCelebrati
           </div>
         ))}
       </div>
-      <span className="streak-dots-progress">{completedCount}/7</span>
       <div id="milestone-burst" className="milestone-burst hidden" />
     </div>
   );

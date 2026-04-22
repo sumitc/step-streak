@@ -2,7 +2,7 @@ import { UserData, DailySteps, StreakCycle, CycleDay, DayStatus } from '../types
 import { getLocalDateString } from './dateUtils';
 
 const STORAGE_KEY = 'step_streak_data';
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const STEPS_THRESHOLD = 8000;
 
 // ─── Date helpers ────────────────────────────────────────────────────────────
@@ -82,16 +82,15 @@ const deriveCyclePoints = (
 
 const migrateToV2 = (raw: any): UserData => {
   const today = getLocalDateString();
-  // Preserve existing daily steps if present
   const dailySteps: DailySteps[] = Array.isArray(raw.dailySteps) ? raw.dailySteps : [];
-  // Fix anchor: use today, not historical data (avoid retroactive cycle shifts)
-  const appStartDate = today;
+  // Anchor 6 days back so today is day 7 and backfill data fills days 1–6
+  const appStartDate = dailySteps.length > 0 ? addDays(today, -6) : today;
   const currentCycle = buildCycle(0, appStartDate, dailySteps);
   return {
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: 2,
     dailySteps,
     appStartDate,
-    totalPoints: 0, // fresh start — no retroactive awards
+    totalPoints: 0,
     currentCycle,
     pastCycles: [],
     lastSyncDate: raw.lastSyncDate ?? new Date().toISOString(),
@@ -99,6 +98,16 @@ const migrateToV2 = (raw: any): UserData => {
     isAuthenticated: raw.isAuthenticated ?? false,
     userId: raw.userId ?? 'default_user',
   };
+};
+
+// Fix v2 data that had appStartDate wrongly anchored to today
+const migrateToV3 = (data: UserData): UserData => {
+  const today = getLocalDateString();
+  let { appStartDate } = data;
+  if (appStartDate === today && data.dailySteps.some((d) => d.date < today)) {
+    appStartDate = addDays(today, -6);
+  }
+  return rebuildCycles({ ...data, schemaVersion: 3, appStartDate });
 };
 
 // ─── Core storage API ────────────────────────────────────────────────────────
@@ -124,10 +133,20 @@ export const getStoredData = (): UserData => {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) return getDefaultData();
   const raw = JSON.parse(stored);
-  if (!raw.schemaVersion || raw.schemaVersion < SCHEMA_VERSION) {
-    return migrateToV2(raw);
+
+  let data: UserData;
+  if (!raw.schemaVersion || raw.schemaVersion < 2) {
+    data = migrateToV2(raw);
+  } else {
+    data = raw as UserData;
   }
-  return raw as UserData;
+
+  if (data.schemaVersion < SCHEMA_VERSION) {
+    data = migrateToV3(data);
+    saveData(data);
+  }
+
+  return data;
 };
 
 export const saveData = (data: UserData): void => {
