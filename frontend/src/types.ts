@@ -15,8 +15,8 @@ export interface CycleDay {
 }
 
 export interface StreakCycle {
-  cycleNumber: number;     // 0-indexed from appStartDate
-  startDate: string;       // YYYY-MM-DD, first day of this cycle
+  cycleNumber: number;     // weeks since firstOpenDate's Monday
+  startDate: string;       // YYYY-MM-DD, always the Monday of the week
   days: CycleDay[];        // exactly 7 entries
   milestones: {
     consecutive3: boolean; // ever had 3 consecutive complete days
@@ -27,9 +27,9 @@ export interface StreakCycle {
 }
 
 export interface UserData {
-  schemaVersion: number;         // bump on breaking changes; current = 2
+  schemaVersion: number;         // bump on breaking changes; current = 4
   dailySteps: DailySteps[];
-  appStartDate: string;          // YYYY-MM-DD, fixed anchor set once
+  firstOpenDate: string;         // YYYY-MM-DD, date user first opened the app (never changes)
   totalPoints: number;           // lifetime points, derived from all cycles
   currentCycle: StreakCycle;
   pastCycles: StreakCycle[];
