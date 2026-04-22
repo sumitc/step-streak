@@ -8,7 +8,7 @@ import { execSync, spawn } from "child_process";
 const PROJECTS_DIR = "/Users/sumitc/projects";
 const BACKEND_DIR  = `${PROJECTS_DIR}/step-streak-backend`;
 const FRONTEND_DIR = `${PROJECTS_DIR}/step-streak-app`;
-const BACKEND_URL  = "https://sumits-macbook-air.tail2cae07.ts.net:5001";
+const BACKEND_URL  = "https://step-streak.onrender.com";
 const FRONTEND_URL = "http://localhost:4000";
 
 // ─── Architecture knowledge ───────────────────────────────────────────────────
