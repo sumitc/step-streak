@@ -1,0 +1,41 @@
+/* ── Points counter (always visible) ────────────────────────────────────── */
+.points-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition: background 0.3s, box-shadow 0.3s;
+  user-select: none;
+}
+
+.points-counter:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.points-counter__icon {
+  font-size: 1rem;
+}
+
+.points-counter__value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #FFD700;
+  letter-spacing: 0.5px;
+  min-width: 28px;
+  text-align: right;
+}
+
+/* ── Glow pulse when points increase ────────────────────────────────────── */
+@keyframes points-glow {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.5); }
+  50%  { box-shadow: 0 0 0 8px rgba(255, 215, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0); }
+}
+
+.points-counter--glow {
+  animation: points-glow 0.8s ease-out;
+}

@@ -72,69 +72,16 @@ html, body, #root {
   to { transform: rotate(360deg); }
 }
 
-/* Row 2: Streak pill + Badges */
+/* Row 2: Stats — replaced by StreakDots + PointsCounter */
 .stats-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  position: relative;
-  z-index: 10;
+  display: none; /* removed */
 }
 
-.streak-pill {
+/* header-right: points counter + sync button */
+.header-right {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 20px;
-  padding: 6px 14px;
-  color: white;
-  font-size: 0.8rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.streak-sep {
-  opacity: 0.4;
-}
-
-.badges-row {
-  display: flex;
-  gap: 8px;
-}
-
-.badge {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.15);
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.badge.earned {
-  background: rgba(255, 215, 0, 0.25);
-  border: 1.5px solid rgba(255, 215, 0, 0.6);
-}
-
-.badge.locked {
-  opacity: 0.45;
-}
-
-.badge-emoji {
-  font-size: 1.1rem;
-  line-height: 1;
-}
-
-.badge-label {
-  font-size: 0.55rem;
-  color: white;
-  font-weight: 600;
-  margin-top: 1px;
 }
 
 /* Main: Circular ring — true viewport center */

@@ -1,36 +1,168 @@
-import { UserData, DailySteps } from '../types';
+import { UserData, DailySteps, StreakCycle, CycleDay, DayStatus } from '../types';
 import { getLocalDateString } from './dateUtils';
 
 const STORAGE_KEY = 'step_streak_data';
+const SCHEMA_VERSION = 2;
+const STEPS_THRESHOLD = 8000;
 
-const getDefaultData = (): UserData => ({
-  dailySteps: [],
-  streakData: {
-    currentStreak: 0,
-    longestStreak: 0,
-    lastUpdateDate: getLocalDateString(),
-  },
-  rewards: [
-    { days: 3, earned: false },
-    { days: 5, earned: false },
-    { days: 7, earned: false },
-  ],
-  lastSyncDate: new Date().toISOString(),
-  lastSyncTimestamp: '',
-  isAuthenticated: false,
-  userId: 'default_user',
-});
+// ─── Date helpers ────────────────────────────────────────────────────────────
+
+const addDays = (dateStr: string, n: number): string => {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return getLocalDateString(d);
+};
+
+const daysBetween = (a: string, b: string): number => {
+  const msA = new Date(a + 'T12:00:00').getTime();
+  const msB = new Date(b + 'T12:00:00').getTime();
+  return Math.round((msB - msA) / 86_400_000);
+};
+
+// ─── Cycle builders ──────────────────────────────────────────────────────────
+
+const buildCycle = (
+  cycleNumber: number,
+  startDate: string,
+  dailySteps: DailySteps[]
+): StreakCycle => {
+  const today = getLocalDateString();
+  const stepsMap = new Map(dailySteps.map((d) => [d.date, d.steps]));
+
+  const days: CycleDay[] = Array.from({ length: 7 }, (_, i) => {
+    const date = addDays(startDate, i);
+    let status: DayStatus;
+    if (date > today) {
+      status = 'pending';
+    } else if (date === today) {
+      const steps = stepsMap.get(date) ?? 0;
+      status = steps >= STEPS_THRESHOLD ? 'complete' : 'pending';
+    } else {
+      const steps = stepsMap.get(date) ?? 0;
+      status = steps >= STEPS_THRESHOLD ? 'complete' : 'missed';
+    }
+    return { date, status };
+  });
+
+  const milestones = deriveMilestones(days);
+  const pointsAwarded = deriveCyclePoints(days, milestones);
+
+  return { cycleNumber, startDate, days, milestones, pointsAwarded };
+};
+
+const deriveMilestones = (days: CycleDay[]) => {
+  // Find the max consecutive 'complete' run in the cycle
+  let maxConsec = 0;
+  let run = 0;
+  for (const day of days) {
+    if (day.status === 'complete') { run++; maxConsec = Math.max(maxConsec, run); }
+    else { run = 0; }
+  }
+  const perfectWeek = days.every((d) => d.status === 'complete');
+  return {
+    consecutive3: maxConsec >= 3,
+    consecutive5: maxConsec >= 5,
+    perfectWeek,
+  };
+};
+
+const deriveCyclePoints = (
+  days: CycleDay[],
+  milestones: StreakCycle['milestones']
+): number => {
+  const completed = days.filter((d) => d.status === 'complete').length;
+  let pts = completed * 10;
+  if (milestones.consecutive3) pts += 30;
+  if (milestones.consecutive5) pts += 50;
+  if (milestones.perfectWeek) pts += 100;
+  return pts;
+};
+
+// ─── Migration ───────────────────────────────────────────────────────────────
+
+const migrateToV2 = (raw: any): UserData => {
+  const today = getLocalDateString();
+  // Preserve existing daily steps if present
+  const dailySteps: DailySteps[] = Array.isArray(raw.dailySteps) ? raw.dailySteps : [];
+  // Fix anchor: use today, not historical data (avoid retroactive cycle shifts)
+  const appStartDate = today;
+  const currentCycle = buildCycle(0, appStartDate, dailySteps);
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    dailySteps,
+    appStartDate,
+    totalPoints: 0, // fresh start — no retroactive awards
+    currentCycle,
+    pastCycles: [],
+    lastSyncDate: raw.lastSyncDate ?? new Date().toISOString(),
+    lastSyncTimestamp: raw.lastSyncTimestamp ?? '',
+    isAuthenticated: raw.isAuthenticated ?? false,
+    userId: raw.userId ?? 'default_user',
+  };
+};
+
+// ─── Core storage API ────────────────────────────────────────────────────────
+
+const getDefaultData = (): UserData => {
+  const today = getLocalDateString();
+  const currentCycle = buildCycle(0, today, []);
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    dailySteps: [],
+    appStartDate: today,
+    totalPoints: 0,
+    currentCycle,
+    pastCycles: [],
+    lastSyncDate: new Date().toISOString(),
+    lastSyncTimestamp: '',
+    isAuthenticated: false,
+    userId: 'default_user',
+  };
+};
 
 export const getStoredData = (): UserData => {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) return getDefaultData();
-  // Merge with defaults so old data gains new fields
-  return { ...getDefaultData(), ...JSON.parse(stored) };
+  const raw = JSON.parse(stored);
+  if (!raw.schemaVersion || raw.schemaVersion < SCHEMA_VERSION) {
+    return migrateToV2(raw);
+  }
+  return raw as UserData;
 };
 
 export const saveData = (data: UserData): void => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 };
+
+// ─── Cycle management ────────────────────────────────────────────────────────
+
+// Rebuild current/past cycles from dailySteps + fixed appStartDate.
+// Returns the updated data (caller must saveData).
+const rebuildCycles = (data: UserData): UserData => {
+  const today = getLocalDateString();
+  const daysSinceStart = daysBetween(data.appStartDate, today);
+  const currentCycleNumber = Math.floor(daysSinceStart / 7);
+
+  // Rebuild current cycle fresh
+  const currentCycleStart = addDays(data.appStartDate, currentCycleNumber * 7);
+  const newCurrentCycle = buildCycle(currentCycleNumber, currentCycleStart, data.dailySteps);
+
+  // Rebuild past cycles that have changed (e.g. due to backfill)
+  const pastCycles: StreakCycle[] = [];
+  for (let n = 0; n < currentCycleNumber; n++) {
+    const startDate = addDays(data.appStartDate, n * 7);
+    pastCycles.push(buildCycle(n, startDate, data.dailySteps));
+  }
+
+  // Derive total points from all cycles
+  const totalPoints =
+    pastCycles.reduce((sum, c) => sum + c.pointsAwarded, 0) +
+    newCurrentCycle.pointsAwarded;
+
+  return { ...data, currentCycle: newCurrentCycle, pastCycles, totalPoints };
+};
+
+// ─── Public write helpers ─────────────────────────────────────────────────────
 
 export const setAuthenticated = (userId: string = 'default_user'): void => {
   const data = getStoredData();
@@ -53,103 +185,29 @@ export const setLastSyncTimestamp = (): void => {
   saveData(data);
 };
 
-// Update steps for a specific date and recalculate streaks
+// Update steps for a specific date and rebuild cycles
 export const setStepsForDate = (steps: number, date: string): void => {
-  const data = getStoredData();
+  let data = getStoredData();
   const idx = data.dailySteps.findIndex((d) => d.date === date);
-  if (idx >= 0) {
-    data.dailySteps[idx].steps = steps;
-  } else {
-    data.dailySteps.push({ date, steps });
-  }
-  updateStreaks(data);
+  if (idx >= 0) { data.dailySteps[idx].steps = steps; }
+  else { data.dailySteps.push({ date, steps }); }
+  data = rebuildCycles(data);
   saveData(data);
 };
 
-// Update today's steps (backwards-compatible helper)
+// Backwards-compatible helper
 export const addDailySteps = (steps: number): void => {
   setStepsForDate(steps, getLocalDateString());
 };
 
-// Batch-update multiple dates then recalculate once (used by backfill)
+// Batch-update multiple dates then rebuild once (used by backfill)
 export const batchUpdateSteps = (updates: DailySteps[]): void => {
-  const data = getStoredData();
+  let data = getStoredData();
   updates.forEach(({ date, steps }) => {
     const idx = data.dailySteps.findIndex((d) => d.date === date);
-    if (idx >= 0) {
-      data.dailySteps[idx].steps = steps;
-    } else {
-      data.dailySteps.push({ date, steps });
-    }
+    if (idx >= 0) { data.dailySteps[idx].steps = steps; }
+    else { data.dailySteps.push({ date, steps }); }
   });
-  updateStreaks(data);
+  data = rebuildCycles(data);
   saveData(data);
-};
-
-const updateStreaks = (data: UserData): void => {
-  const today = getLocalDateString();
-  const threshold = 8000;
-
-  const sortedDays = [...data.dailySteps].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-  );
-
-  // Current streak: count consecutive calendar days ending today (or yesterday if today has no entry)
-  let currentStreak = 0;
-  let expectedDate = today;
-  for (const daily of sortedDays) {
-    if (daily.date !== expectedDate) break; // gap in consecutive days
-    if (daily.steps >= threshold) {
-      currentStreak++;
-      // Step back one calendar day
-      const d = new Date(daily.date + 'T12:00:00');
-      d.setDate(d.getDate() - 1);
-      expectedDate = getLocalDateString(d);
-    } else {
-      break;
-    }
-  }
-
-  // Longest streak: sliding window over date-sorted array
-  let longestStreak = 0;
-  let runStreak = 0;
-  for (let i = 0; i < sortedDays.length; i++) {
-    if (sortedDays[i].steps >= threshold) {
-      // Check this day is consecutive with the previous counted day
-      if (runStreak === 0) {
-        runStreak = 1;
-      } else {
-        const prev = new Date(sortedDays[i - 1].date + 'T12:00:00');
-        prev.setDate(prev.getDate() - 1);
-        if (getLocalDateString(prev) === sortedDays[i].date) {
-          runStreak++;
-        } else {
-          runStreak = 1; // gap — restart
-        }
-      }
-      longestStreak = Math.max(longestStreak, runStreak);
-    } else {
-      runStreak = 0;
-    }
-  }
-
-  data.streakData.currentStreak = currentStreak;
-  data.streakData.longestStreak = longestStreak;
-  data.streakData.lastUpdateDate = today;
-
-
-
-  updateRewards(data);
-};
-
-const updateRewards = (data: UserData): void => {
-  const { currentStreak } = data.streakData;
-  const today = getLocalDateString();
-
-  data.rewards = data.rewards.map((reward) => {
-    if (currentStreak >= reward.days && !reward.earned) {
-      return { ...reward, earned: true, earnedDate: today };
-    }
-    return reward;
-  });
 };

@@ -4,6 +4,8 @@ import { getStoredData, addDailySteps, setAuthenticated } from '../utils/storage
 import { getStepsFromGoogleFit } from '../utils/googleFit';
 import { syncOnOpen, syncBackfill, forceSyncToday } from '../utils/syncManager';
 import { getLocalDateString } from '../utils/dateUtils';
+import StreakDots from './StreakDots';
+import PointsCounter from './PointsCounter';
 import '../styles/Dashboard.css';
 
 const GOAL = 8000;
@@ -50,10 +52,8 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // Load stored data first
         refreshFromStorage();
 
-        // Handle OAuth redirect callback
         const params = new URLSearchParams(window.location.search);
         if (params.get('auth') === 'success') {
           const userId = params.get('userId') || 'default_user';
@@ -62,10 +62,8 @@ const Dashboard: React.FC = () => {
           window.history.replaceState({}, document.title, window.location.pathname);
         }
 
-        // Sync on open
         await runSync();
 
-        // Backfill last week in background (non-blocking)
         syncBackfill().then(() => refreshFromStorage()).catch(console.error);
       } catch (error) {
         console.error('Error initializing app:', error);
@@ -76,7 +74,7 @@ const Dashboard: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Capacitor resume listener — triggers sync each time the app comes back to foreground
+  // Capacitor resume listener
   useEffect(() => {
     let removeListener: (() => void) | undefined;
 
@@ -88,7 +86,7 @@ const Dashboard: React.FC = () => {
         });
         removeListener = () => handle.remove();
       } catch {
-        // Not running inside Capacitor (e.g. browser dev mode) — skip silently
+        // Not running inside Capacitor — skip silently
       }
       initDone.current = true;
     };
@@ -114,7 +112,7 @@ const Dashboard: React.FC = () => {
     setSyncLoading(true);
     try {
       if (!isAuthenticated) {
-        await getStepsFromGoogleFit(); // redirects to OAuth
+        await getStepsFromGoogleFit();
       } else {
         const { steps } = await forceSyncToday();
         if (steps > 0) {
@@ -122,7 +120,6 @@ const Dashboard: React.FC = () => {
           if (steps >= GOAL) setCelebrating(true);
         }
         refreshFromStorage();
-        // Backfill prior days in background after manual sync
         syncBackfill().then(() => refreshFromStorage()).catch(console.error);
       }
     } catch (error) {
@@ -139,54 +136,34 @@ const Dashboard: React.FC = () => {
   const overSteps = todaySteps - GOAL;
   const circumference = 2 * Math.PI * 90;
   const strokeOffset = circumference - (percentage / 100) * circumference;
-  const currentStreak = data.streakData.currentStreak;
-  const longestStreak = data.streakData.longestStreak;
-
-  const getBadge = (days: number) => {
-    const reward = data.rewards.find(r => r.days === days);
-    const earned = reward?.earned || false;
-    const emoji = days === 3 ? '🥉' : days === 5 ? '🥈' : '🥇';
-    return { emoji, earned, days };
-  };
 
   return (
     <>
       <div className={`dashboard ${celebrating ? 'celebrate' : ''}`}>
-        {/* Row 1: Header with sync icon */}
+        {/* Header row: title + points */}
         <header className="header-row">
           <div className="header-text">
             <h1>Step Streak</h1>
             <p>Daily 8K step challenge</p>
           </div>
-          <button
-            className={`sync-btn ${syncLoading ? 'syncing' : ''}`}
-            onClick={handleGoogleFitSync}
-            disabled={syncLoading}
-            title={isAuthenticated ? 'Sync Google Fit' : 'Connect Google Fit'}
-          >
-            {syncLoading ? '⏳' : '🔄'}
-          </button>
+          <div className="header-right">
+            <PointsCounter points={data.totalPoints} />
+            <button
+              className={`sync-btn ${syncLoading ? 'syncing' : ''}`}
+              onClick={handleGoogleFitSync}
+              disabled={syncLoading}
+              title={isAuthenticated ? 'Sync Google Fit' : 'Connect Google Fit'}
+            >
+              {syncLoading ? '⏳' : '🔄'}
+            </button>
+          </div>
         </header>
 
-        {/* Row 2: Streak + Badges */}
-        <div className="stats-row">
-          <div className="streak-pill">
-            <span>🔥 {currentStreak}d</span>
-            <span className="streak-sep">|</span>
-            <span>⭐ {longestStreak}d best</span>
-          </div>
-          <div className="badges-row">
-            {[3, 5, 7].map(d => {
-              const b = getBadge(d);
-              return (
-                <div key={d} className={`badge ${b.earned ? 'earned' : 'locked'}`} title={`${d}-day streak`}>
-                  <span className="badge-emoji">{b.emoji}</span>
-                  <span className="badge-label">{d}d</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        {/* 7-day streak dots */}
+        <StreakDots
+          cycle={data.currentCycle}
+          totalPoints={data.totalPoints}
+        />
 
         {/* Main: Circular progress */}
         <div className="ring-section">
@@ -227,7 +204,7 @@ const Dashboard: React.FC = () => {
         )}
       </div>
 
-      {/* Manual entry — floating at bottom, outside dashboard overflow */}
+      {/* Manual entry */}
       <div className="manual-section">
         {!showManualEntry ? (
           <button className="manual-toggle" onClick={() => setShowManualEntry(true)}>
@@ -253,3 +230,4 @@ const Dashboard: React.FC = () => {
 };
 
 export default Dashboard;
+
