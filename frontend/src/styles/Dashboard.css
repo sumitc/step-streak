@@ -73,9 +73,6 @@ html, body, #root {
 }
 
 /* Row 2: Stats — replaced by StreakDots + PointsCounter */
-.stats-row {
-  display: none; /* removed */
-}
 
 /* header-right: points counter + sync button */
 .header-right {
