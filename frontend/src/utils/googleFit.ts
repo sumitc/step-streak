@@ -8,7 +8,6 @@ export const getStepsFromGoogleFit = async (): Promise<void> => {
   try {
     const response = await fetch(`${getBackendUrl()}/auth/login`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
     });
 
     if (!response.ok) throw new Error(`Backend error: ${response.status}`);
