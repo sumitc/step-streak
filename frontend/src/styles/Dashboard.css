@@ -50,7 +50,6 @@ html, body, #root {
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.3);
   background: rgba(255, 255, 255, 0.15);
-  font-size: 1.2rem;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -65,7 +64,7 @@ html, body, #root {
 }
 
 .sync-btn.syncing {
-  animation: spin 1s linear infinite;
+  /* spinner handled by .gfit-icon.spin */
 }
 
 @keyframes spin {
@@ -79,6 +78,47 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.sync-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.sync-status-chip {
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+  animation: chip-fade-in 0.2s ease;
+}
+
+.sync-status-chip.done {
+  background: rgba(76, 175, 80, 0.25);
+  color: #81C784;
+}
+
+.sync-status-chip.error {
+  background: rgba(244, 67, 54, 0.2);
+  color: #EF9A9A;
+}
+
+@keyframes chip-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.gfit-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.gfit-icon.spin {
+  animation: spin 0.9s linear infinite;
 }
 
 /* Main: Circular ring — true viewport center */

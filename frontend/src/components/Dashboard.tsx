@@ -19,6 +19,8 @@ const Dashboard: React.FC = () => {
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [celebrating, setCelebrating] = useState(false);
   const [viewingDate, setViewingDate] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'done' | 'error'>('idle');
+  const syncStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initDone = useRef(false);
 
   const refreshFromStorage = useCallback(() => {
@@ -33,6 +35,12 @@ const Dashboard: React.FC = () => {
     }
   }, []);
 
+  const showSyncStatus = useCallback((status: 'done' | 'error') => {
+    if (syncStatusTimer.current) clearTimeout(syncStatusTimer.current);
+    setSyncStatus(status);
+    syncStatusTimer.current = setTimeout(() => setSyncStatus('idle'), 2500);
+  }, []);
+
   const runSync = useCallback(async () => {
     setSyncLoading(true);
     try {
@@ -41,13 +49,15 @@ const Dashboard: React.FC = () => {
         refreshFromStorage();
         setTodaySteps(steps);
         if (steps >= GOAL) setCelebrating(true);
+        showSyncStatus('done');
       }
     } catch (err) {
       console.error('Sync error:', err);
+      showSyncStatus('error');
     } finally {
       setSyncLoading(false);
     }
-  }, [refreshFromStorage]);
+  }, [refreshFromStorage, showSyncStatus]);
 
   // Initial load + OAuth callback handling
   useEffect(() => {
@@ -122,9 +132,11 @@ const Dashboard: React.FC = () => {
         }
         refreshFromStorage();
         syncBackfill().then(() => refreshFromStorage()).catch(console.error);
+        showSyncStatus('done');
       }
     } catch (error) {
       console.error('Sync error:', error);
+      showSyncStatus('error');
     } finally {
       setSyncLoading(false);
     }
@@ -157,14 +169,32 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="header-right">
             <PointsCounter points={data.totalPoints} />
-            <button
-              className={`sync-btn ${syncLoading ? 'syncing' : ''}`}
-              onClick={handleGoogleFitSync}
-              disabled={syncLoading}
-              title={isAuthenticated ? 'Sync Google Fit' : 'Connect Google Fit'}
-            >
-              {syncLoading ? '⏳' : '🔄'}
-            </button>
+            <div className="sync-wrap">
+              {syncStatus !== 'idle' && (
+                <span className={`sync-status-chip ${syncStatus}`}>
+                  {syncStatus === 'done' ? '✓ Synced' : '✕ Failed'}
+                </span>
+              )}
+              <button
+                className={`sync-btn ${syncLoading ? 'syncing' : ''}`}
+                onClick={handleGoogleFitSync}
+                disabled={syncLoading}
+                title={isAuthenticated ? 'Sync Google Fit' : 'Connect Google Fit'}
+              >
+                {syncLoading ? (
+                  <svg className="gfit-icon spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2a10 10 0 0 1 10 10" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/>
+                  </svg>
+                ) : (
+                  <svg className="gfit-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2.5c-2.1 0-3.8 1.7-3.8 3.8S9.9 10.1 12 10.1s3.8-1.7 3.8-3.8S14.1 2.5 12 2.5z" fill="#EA4335"/>
+                    <path d="M6.3 10.1c-2.1 0-3.8 1.7-3.8 3.8s1.7 3.8 3.8 3.8 3.8-1.7 3.8-3.8-1.7-3.8-3.8-3.8z" fill="#FBBC05"/>
+                    <path d="M17.7 10.1c-2.1 0-3.8 1.7-3.8 3.8s1.7 3.8 3.8 3.8 3.8-1.7 3.8-3.8-1.7-3.8-3.8-3.8z" fill="#34A853"/>
+                    <path d="M12 17.9c-2.1 0-3.8 1.7-3.8 3.8H15.8c0-2.1-1.7-3.8-3.8-3.8z" fill="#4285F4"/>
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
         </header>
 
