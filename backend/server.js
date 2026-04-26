@@ -195,6 +195,10 @@ app.get('/auth/callback', async (req, res) => {
     };
     saveTokens();
 
+    // Log refresh token — copy this to GOOGLE_REFRESH_TOKEN in Render env vars for persistence
+    console.log(`🔑 OAuth success for ${userId}. Set this in Render env vars to survive restarts:`);
+    console.log(`   GOOGLE_REFRESH_TOKEN=${refresh_token}`);
+
     // Redirect back to frontend with success
     res.redirect(`${FRONTEND_URL}?auth=success&userId=${userId}`);
   } catch (error) {
@@ -250,6 +254,20 @@ app.get('/auth/status', (req, res) => {
   const { userId = 'default_user' } = req.query;
   const stored = userTokens[userId];
   res.json({ authenticated: !!(stored && stored.refreshToken) });
+});
+
+// Returns the current refresh token so you can set GOOGLE_REFRESH_TOKEN in Render once.
+// After that the backend bootstraps itself on every restart — no more re-logins.
+app.get('/auth/export-token', (req, res) => {
+  const { userId = 'default_user' } = req.query;
+  const stored = userTokens[userId];
+  if (!stored?.refreshToken) {
+    return res.status(404).json({ error: 'No token found. Please log in first.' });
+  }
+  res.json({
+    refreshToken: stored.refreshToken,
+    instructions: 'Copy the refreshToken value. In Render → your backend service → Environment, add: GOOGLE_REFRESH_TOKEN=<value>. Then redeploy. You will never need to log in again.',
+  });
 });
 
 app.post('/api/steps', async (req, res) => {
