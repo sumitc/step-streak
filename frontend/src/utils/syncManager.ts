@@ -23,11 +23,18 @@ export const syncOnOpen = async (): Promise<{ steps: number; synced: boolean }> 
   const data = getStoredData();
   if (!data.isAuthenticated) return { steps: 0, synced: false };
 
-  // Verify the backend still has valid tokens
+  // Check if backend has tokens — but DON'T clear auth here.
+  // The backend may have just restarted (Render ephemeral FS wipes tokens.json).
+  // If GOOGLE_REFRESH_TOKEN is set in Render env, the backend bootstraps automatically
+  // and will respond correctly. If not set, syncs will fail but we won't log the user out
+  // — they just need to set the env var once (see /auth/export-token on the backend).
   const authOk = await checkAuthStatus(data.userId);
   if (!authOk) {
-    clearAuthenticated();
-    return { steps: 0, synced: false };
+    // Don't clear auth — backend may just be waking up or token not yet bootstrapped.
+    // Return last known steps; user stays logged in.
+    const today = getLocalDateString();
+    const todayData = data.dailySteps.find((d) => d.date === today);
+    return { steps: todayData?.steps || 0, synced: false };
   }
 
   const today = getLocalDateString();
@@ -43,7 +50,7 @@ export const syncOnOpen = async (): Promise<{ steps: number; synced: boolean }> 
     setLastSyncTimestamp();
     return { steps, synced: true };
   } catch (error: any) {
-    if (error.status === 401) clearAuthenticated();
+    if (error.status === 401) clearAuthenticated(); // only clear on confirmed 401
     return { steps: 0, synced: false };
   }
 };
@@ -55,7 +62,7 @@ export const forceSyncToday = async (): Promise<{ steps: number }> => {
 
   const authOk = await checkAuthStatus(data.userId);
   if (!authOk) {
-    clearAuthenticated();
+    // Same as above — don't clear auth on status check failure alone
     return { steps: 0 };
   }
 
