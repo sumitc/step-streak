@@ -361,3 +361,27 @@ html, body {
   -webkit-overflow-scrolling: touch;
   touch-action: manipulation;
 }
+
+/* History button */
+.history-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.history-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 4px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.history-btn:hover, .history-btn:active {
+  background: rgba(255, 255, 255, 0.22);
+}

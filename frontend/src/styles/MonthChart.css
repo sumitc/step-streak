@@ -1,0 +1,199 @@
+/* ─── Full-screen overlay ────────────────────────────────────────────────── */
+
+.month-overlay {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(160deg, #667eea 0%, #764ba2 100%);
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  overflow-y: auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  animation: monthSlideUp 0.22s ease-out;
+}
+
+@keyframes monthSlideUp {
+  from { transform: translateY(8%); opacity: 0; }
+  to   { transform: translateY(0);  opacity: 1; }
+}
+
+.month-inner {
+  width: 100%;
+  max-width: 480px;
+  padding: env(safe-area-inset-top, 20px) 20px env(safe-area-inset-bottom, 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ─── Navigation header ───────────────────────────────────────────────────── */
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.month-title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.month-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: white;
+  letter-spacing: -0.3px;
+}
+
+.month-points-badge {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.month-nav-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: white;
+  font-size: 1.4rem;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.month-nav-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.month-nav-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.month-close-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: white;
+  font-size: 0.85rem;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.month-close-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ─── Chart container ─────────────────────────────────────────────────────── */
+
+.month-chart-wrap {
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 18px;
+  padding: 18px 14px 10px;
+}
+
+.month-chart-area {
+  position: relative;
+  width: 100%;
+}
+
+/* Goal line: dashed horizontal at 8k */
+.month-goal-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+}
+
+.month-goal-label {
+  position: absolute;
+  right: 0;
+  top: -9px;
+  font-size: 8px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.3px;
+}
+
+/* ─── Bars ────────────────────────────────────────────────────────────────── */
+
+.month-bars {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 100%;
+  gap: 2px;
+}
+
+.month-bar-col {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+  position: relative;
+}
+
+.month-bar {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  transition: height 0.35s ease;
+}
+
+.month-bar.green    { background: #22c55e; }
+.month-bar.grey     { background: rgba(255, 255, 255, 0.22); }
+.month-bar.today-bar { background: #f59e0b; }
+.month-bar.empty    { background: transparent; }
+
+/* Subtle outline on today's column */
+.month-bar-col.col-today::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: -1px;
+  right: -1px;
+  top: 0;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+/* ─── Day labels ──────────────────────────────────────────────────────────── */
+
+.month-day-labels {
+  display: flex;
+  width: 100%;
+  gap: 2px;
+  padding-top: 5px;
+}
+
+.month-day-tick {
+  flex: 1;
+  text-align: center;
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.45);
+  font-feature-settings: 'tnum';
+  line-height: 1;
+}
+
+/* ─── Status messages ─────────────────────────────────────────────────────── */
+
+.month-loading,
+.month-no-auth {
+  text-align: center;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.65);
+  padding: 4px 0;
+}

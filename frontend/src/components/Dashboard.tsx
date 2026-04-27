@@ -6,6 +6,7 @@ import { syncOnOpen, syncBackfill, forceSyncToday } from '../utils/syncManager';
 import { getLocalDateString } from '../utils/dateUtils';
 import StreakDots from './StreakDots';
 import PointsCounter from './PointsCounter';
+import MonthChart from './MonthChart';
 import '../styles/Dashboard.css';
 
 const GOAL = 8000;
@@ -20,6 +21,7 @@ const Dashboard: React.FC = () => {
   const [celebrating, setCelebrating] = useState(false);
   const [viewingDate, setViewingDate] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'done' | 'error'>('idle');
+  const [monthViewDate, setMonthViewDate] = useState<string | null>(null);
   const syncStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initDone = useRef(false);
 
@@ -205,6 +207,16 @@ const Dashboard: React.FC = () => {
           onDaySelect={(date) => setViewingDate(date)}
         />
 
+        {/* History button */}
+        <div className="history-row">
+          <button
+            className="history-btn"
+            onClick={() => setMonthViewDate(today.substring(0, 7))}
+          >
+            📊 History
+          </button>
+        </div>
+
         {/* Main: Circular progress */}
         <div className="ring-section">
           <div className="viewing-date-label">📅 {displayDate}</div>
@@ -268,6 +280,23 @@ const Dashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Monthly history overlay */}
+      {monthViewDate && (
+        <MonthChart
+          monthDate={monthViewDate}
+          dailySteps={data.dailySteps}
+          todaySteps={todaySteps}
+          pastCycles={data.pastCycles}
+          currentCycle={data.currentCycle}
+          firstOpenDate={data.firstOpenDate}
+          isAuthenticated={isAuthenticated}
+          userId={data.userId}
+          onClose={() => setMonthViewDate(null)}
+          onMonthChange={setMonthViewDate}
+          onDataFetched={refreshFromStorage}
+        />
+      )}
     </>
   );
 };
