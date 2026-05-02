@@ -377,6 +377,35 @@ app.get('/auth/export-token', async (req, res) => {
   });
 });
 
+// Reset auth for a userId — clears in-memory tokens, tokens.json, and Redis key.
+// Useful for testing the fresh-login flow. Call with DELETE /auth/reset?userId=<id>
+// or DELETE /auth/reset (clears ALL users — full factory reset).
+app.delete('/auth/reset', async (req, res) => {
+  const { userId } = req.query;
+
+  if (userId) {
+    delete userTokens[userId];
+    // Also delete from Redis
+    if (UPSTASH_URL && UPSTASH_AUTH) {
+      try {
+        await axios.get(`${UPSTASH_URL}/del/tokens:${encodeURIComponent(userId)}`, {
+          headers: { Authorization: `Bearer ${UPSTASH_AUTH}` },
+        });
+      } catch (err) {
+        console.warn('[redis] delete failed:', err.message);
+      }
+    }
+    console.log(`[reset] cleared tokens for userId=${userId}`);
+  } else {
+    // Full reset — clear everything
+    Object.keys(userTokens).forEach(k => delete userTokens[k]);
+    console.log('[reset] cleared ALL tokens');
+  }
+
+  saveTokens();
+  res.json({ success: true, message: userId ? `Tokens cleared for ${userId}` : 'All tokens cleared' });
+});
+
 app.post('/api/steps', async (req, res) => {
   const { userId = 'default_user', date, timezone = 'UTC' } = req.body;
 
