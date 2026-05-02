@@ -385,7 +385,6 @@ app.delete('/auth/reset', async (req, res) => {
 
   if (userId) {
     delete userTokens[userId];
-    // Also delete from Redis
     if (UPSTASH_URL && UPSTASH_AUTH) {
       try {
         await axios.get(`${UPSTASH_URL}/del/tokens:${encodeURIComponent(userId)}`, {
@@ -397,8 +396,25 @@ app.delete('/auth/reset', async (req, res) => {
     }
     console.log(`[reset] cleared tokens for userId=${userId}`);
   } else {
-    // Full reset — clear everything
+    // Full reset — clear memory AND Redis
     Object.keys(userTokens).forEach(k => delete userTokens[k]);
+    if (UPSTASH_URL && UPSTASH_AUTH) {
+      try {
+        // Find all tokens:* keys then delete them
+        const keysRes = await axios.get(`${UPSTASH_URL}/keys/tokens:*`, {
+          headers: { Authorization: `Bearer ${UPSTASH_AUTH}` },
+        });
+        const keys = keysRes.data?.result || [];
+        for (const key of keys) {
+          await axios.get(`${UPSTASH_URL}/del/${encodeURIComponent(key)}`, {
+            headers: { Authorization: `Bearer ${UPSTASH_AUTH}` },
+          });
+        }
+        console.log(`[reset] deleted ${keys.length} Redis key(s)`);
+      } catch (err) {
+        console.warn('[redis] full reset failed:', err.message);
+      }
+    }
     console.log('[reset] cleared ALL tokens');
   }
 
