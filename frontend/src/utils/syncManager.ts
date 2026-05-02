@@ -101,6 +101,9 @@ export const syncBackfill = async (): Promise<void> => {
     batchUpdateSteps(results);
     setLastSyncTimestamp();
   } catch (error: any) {
-    if (error.status === 401) clearAuthenticated();
+    // Do NOT clear auth here — backfill is a silent background process.
+    // A 401 here is likely the backend waking up from Render sleep before it has
+    // bootstrapped tokens. Clearing auth would force the user to re-login on next open.
+    console.warn('[syncBackfill] failed, will retry next sync:', error.message);
   }
 };
