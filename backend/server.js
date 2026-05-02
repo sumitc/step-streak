@@ -49,7 +49,45 @@ if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
 // --- Token persistence ---
 const TOKENS_FILE = path.join(__dirname, 'tokens.json');
 
-function loadTokens() {
+// ── Upstash Redis helpers (optional) ──────────────────────────────────────────
+// If UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN are set in the env,
+// tokens are saved to Redis after every OAuth / token refresh and reloaded on
+// every server restart — fully automatic, no manual copy-paste needed.
+const UPSTASH_URL  = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_AUTH = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+async function redisSave(userId, tokens) {
+  if (!UPSTASH_URL || !UPSTASH_AUTH) return;
+  const key = `tokens:${userId}`;
+  const val = encodeURIComponent(JSON.stringify(tokens));
+  try {
+    const r = await axios.get(`${UPSTASH_URL}/set/${key}/${val}`, {
+      headers: { Authorization: `Bearer ${UPSTASH_AUTH}` },
+    });
+    if (r.data?.result !== 'OK') console.warn('[redis] unexpected SET result:', r.data);
+    else console.log(`[redis] tokens saved for ${userId}`);
+  } catch (err) {
+    console.warn('[redis] save failed:', err.message);
+  }
+}
+
+async function redisLoad(userId) {
+  if (!UPSTASH_URL || !UPSTASH_AUTH) return null;
+  const key = `tokens:${userId}`;
+  try {
+    const r = await axios.get(`${UPSTASH_URL}/get/${key}`, {
+      headers: { Authorization: `Bearer ${UPSTASH_AUTH}` },
+    });
+    const raw = r.data?.result;
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    console.warn('[redis] load failed:', err.message);
+    return null;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+function loadTokensFromFile() {
   try {
     if (fs.existsSync(TOKENS_FILE)) {
       return JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf8'));
@@ -70,20 +108,36 @@ function saveTokens() {
   }
 }
 
-const userTokens = loadTokens();
+const userTokens = loadTokensFromFile();
 
-// On cloud deployments (ephemeral filesystem), bootstrap from env var if no tokens file exists.
-// Set GOOGLE_REFRESH_TOKEN in your hosting platform's env vars after first local OAuth login.
-if (Object.keys(userTokens).length === 0 && process.env.GOOGLE_REFRESH_TOKEN) {
-  userTokens['default_user'] = {
-    accessToken: null,
-    refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
-    expiryTime: 0, // forces refresh on first API call
-  };
-  console.log('🔑 Bootstrapped token from GOOGLE_REFRESH_TOKEN env var');
+// Bootstrap priority (async — runs before server starts listening):
+//   1. tokens.json (local dev, or Render with a persistent disk)
+//   2. Upstash Redis (preferred for Render free tier — add 2 env vars, done)
+//   3. GOOGLE_REFRESH_TOKEN env var (manual fallback)
+async function bootstrapTokens() {
+  if (Object.keys(userTokens).length > 0) {
+    console.log('🔑 Loaded tokens from tokens.json');
+    return;
+  }
+
+  // Try Redis first
+  const redisToken = await redisLoad('default_user');
+  if (redisToken) {
+    userTokens['default_user'] = redisToken;
+    console.log('🔑 Bootstrapped tokens from Upstash Redis');
+    return;
+  }
+
+  // Fall back to env var (legacy / manual setup)
+  if (process.env.GOOGLE_REFRESH_TOKEN) {
+    userTokens['default_user'] = {
+      accessToken: null,
+      refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
+      expiryTime: 0,
+    };
+    console.log('🔑 Bootstrapped token from GOOGLE_REFRESH_TOKEN env var');
+  }
 }
-
-console.log(`🔑 Loaded tokens for users: [${Object.keys(userTokens).join(', ') || 'none'}]`);
 
 // --- Timezone-aware day boundary helpers ---
 
@@ -214,10 +268,15 @@ app.get('/auth/callback', async (req, res) => {
       expiryTime: Date.now() + (expires_in * 1000),
     };
     saveTokens();
+    redisSave(userId, userTokens[userId]); // persist to Redis (no-op if not configured)
 
-    // Log refresh token — copy this to GOOGLE_REFRESH_TOKEN in Render env vars for persistence
-    console.log(`🔑 OAuth success for ${userId}. Set this in Render env vars to survive restarts:`);
-    console.log(`   GOOGLE_REFRESH_TOKEN=${refresh_token}`);
+    // Log refresh token (only needed as manual fallback if Redis isn't configured)
+    if (!UPSTASH_URL) {
+      console.log(`🔑 OAuth success for ${userId}. No Upstash configured — set this in Render env vars to survive restarts:`);
+      console.log(`   GOOGLE_REFRESH_TOKEN=${refresh_token}`);
+    } else {
+      console.log(`🔑 OAuth success for ${userId}. Token saved to Upstash Redis.`);
+    }
 
     // Redirect back to frontend with success
     res.redirect(`${FRONTEND_URL}?auth=success&userId=${userId}`);
@@ -393,6 +452,7 @@ async function refreshAccessToken(userId) {
   userTokens[userId].accessToken = access_token;
   userTokens[userId].expiryTime = Date.now() + (expires_in * 1000);
   saveTokens();
+  redisSave(userId, userTokens[userId]); // keep Redis in sync with refreshed access token
 }
 
 // Health check
@@ -406,25 +466,35 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Start server with HTTPS if certs exist, otherwise HTTP
+// Start server — bootstrap tokens first (async), then listen
 const certsDir = path.join(__dirname, 'cert');
 const certFile = path.join(certsDir, 'sumits-macbook-air.tail2cae07.ts.net.crt');
-const keyFile = path.join(certsDir, 'sumits-macbook-air.tail2cae07.ts.net.key');
+const keyFile  = path.join(certsDir, 'sumits-macbook-air.tail2cae07.ts.net.key');
 
-if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
-  const sslOptions = {
-    cert: fs.readFileSync(certFile),
-    key: fs.readFileSync(keyFile),
-  };
-  https.createServer(sslOptions, app).listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Backend running on https://0.0.0.0:${PORT} (HTTPS)`);
-    console.log(`🔒 Tailscale: https://sumits-macbook-air.tail2cae07.ts.net:${PORT}`);
-    console.log(`🌐 Frontend URL: ${FRONTEND_URL}`);
-  });
-} else {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Backend running on http://0.0.0.0:${PORT} (HTTP)`);
-    console.log(`⚠️  No TLS certs found in certs/ — using HTTP`);
-    console.log(`🌐 Frontend URL: ${FRONTEND_URL}`);
-  });
+async function main() {
+  await bootstrapTokens();
+  console.log(`🔑 Active tokens for: [${Object.keys(userTokens).join(', ') || 'none'}]`);
+
+  if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
+    const sslOptions = {
+      cert: fs.readFileSync(certFile),
+      key: fs.readFileSync(keyFile),
+    };
+    https.createServer(sslOptions, app).listen(PORT, '0.0.0.0', () => {
+      console.log(`✅ Backend running on https://0.0.0.0:${PORT} (HTTPS)`);
+      console.log(`🔒 Tailscale: https://sumits-macbook-air.tail2cae07.ts.net:${PORT}`);
+      console.log(`🌐 Frontend URL: ${FRONTEND_URL}`);
+    });
+  } else {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`✅ Backend running on http://0.0.0.0:${PORT} (HTTP)`);
+      console.log(`⚠️  No TLS certs found in certs/ — using HTTP`);
+      console.log(`🌐 Frontend URL: ${FRONTEND_URL}`);
+    });
+  }
 }
+
+main().catch((err) => {
+  console.error('Fatal startup error:', err);
+  process.exit(1);
+});
