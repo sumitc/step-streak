@@ -123,30 +123,50 @@ function getTodayInTimezone(timezone) {
 }
 
 // --- Google Fit fetch helper (reused by /api/steps and /api/steps/batch) ---
+//
+// Strategy: query two sources in parallel and return the higher count.
+//   1. estimated_steps  — Google's smart deduplicated estimate, the same number shown
+//                         in the Google Fit app. Merges across all fitness apps (Garmin,
+//                         Samsung Health, Fitbit, etc.) without double-counting.
+//   2. default merge    — legacy behaviour (no dataSourceId); used as fallback in case
+//                         estimated_steps isn't populated for a particular day/device.
+//
 async function fetchStepsForDate(userId, dateStr, timezone) {
   const token = userTokens[userId].accessToken;
   const { startTimeMillis, endTimeMillis } = getDayBoundaries(dateStr, timezone);
 
-  const response = await axios.post(
-    'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
-    {
-      aggregateBy: [{ dataTypeName: 'com.google.step_count.delta' }],
-      bucketByTime: { durationMillis: 86400000 },
-      startTimeMillis,
-      endTimeMillis,
-    },
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
+  const base = { bucketByTime: { durationMillis: 86400000 }, startTimeMillis, endTimeMillis };
 
-  let totalSteps = 0;
-  if (response.data.bucket?.length > 0) {
-    response.data.bucket.forEach((bucket) => {
-      bucket.dataset?.[0]?.point?.forEach((point) => {
-        totalSteps += point.value?.[0]?.intVal || 0;
+  const queries = [
+    // Google's cross-source deduplicated estimate
+    { ...base, aggregateBy: [{ dataTypeName: 'com.google.step_count.delta', dataSourceId: 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps' }] },
+    // Default data-type aggregate (current / fallback behaviour)
+    { ...base, aggregateBy: [{ dataTypeName: 'com.google.step_count.delta' }] },
+  ];
+
+  const counts = await Promise.all(queries.map(async (body) => {
+    try {
+      const resp = await axios.post(
+        'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate',
+        body,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      let steps = 0;
+      resp.data.bucket?.forEach((bucket) => {
+        bucket.dataset?.[0]?.point?.forEach((point) => {
+          steps += point.value?.[0]?.intVal || 0;
+        });
       });
-    });
-  }
-  return totalSteps;
+      return steps;
+    } catch (err) {
+      console.warn(`[steps] source query failed for ${dateStr}: ${err.message}`);
+      return 0;
+    }
+  }));
+
+  const best = Math.max(...counts, 0);
+  console.log(`[steps] ${dateStr}: estimated=${counts[0]}, default=${counts[1]} → best=${best}`);
+  return best;
 }
 
 // Auth Routes
