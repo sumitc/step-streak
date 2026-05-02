@@ -6,7 +6,7 @@ import { execSync, spawn } from "child_process";
 
 // ─── Project paths ────────────────────────────────────────────────────────────
 const PROJECTS_DIR  = "/Users/sumitc/projects";
-const BACKEND_DIR   = `${PROJECTS_DIR}/step-streak-backend`;
+const BACKEND_DIR   = `${PROJECTS_DIR}/step-streak/backend`;   // active deployed backend
 const FRONTEND_DIR  = `${PROJECTS_DIR}/step-streak/frontend`;   // active Render-deployed frontend
 const BACKEND_URL   = "https://step-streak-backend.onrender.com";
 const FRONTEND_URL  = "https://step-streak.onrender.com";
@@ -39,7 +39,7 @@ Step Streak is a daily 8,000-step challenge app synced with Google Fit.
 
 ---
 
-## Backend (step-streak-backend/server.js)
+## Backend (step-streak/backend/server.js)
 
 ### Endpoints
 | Method | Path                | Purpose |
@@ -48,16 +48,44 @@ Step Streak is a daily 8,000-step challenge app synced with Google Fit.
 | GET    | /auth/login         | Returns Google OAuth URL |
 | GET    | /auth/callback      | OAuth redirect handler, stores tokens, redirects to frontend |
 | POST   | /auth/callback      | Alternative token exchange |
-| GET    | /auth/status        | Checks if userId has valid tokens (?userId=) |
+| GET    | /auth/status        | Checks if userId has valid tokens (?userId=) — lazy-loads from Redis |
+| GET    | /auth/export-token  | Returns stored refresh token for manual backup (?userId=) |
+| DELETE | /auth/reset         | Clears tokens for userId (or all if no param) — for testing fresh login |
 | POST   | /api/steps          | Fetch steps for one date { userId, date, timezone } |
 | POST   | /api/steps/batch    | Fetch steps for multiple dates { userId, dates[], timezone } |
 | POST   | /api/refresh-token  | Force token refresh |
 
-### Token persistence
-- Tokens stored in tokens.json (gitignored), loaded on startup
+### Token persistence — multi-layer (bootstrap priority order)
+1. tokens.json (local dev / Render with persistent disk)
+2. Upstash Redis (production — auto-saves after OAuth and token refresh)
+3. GOOGLE_REFRESH_TOKEN env var (manual fallback, legacy)
+
 - Atomic write: write to tokens.json.tmp then rename (avoids corruption)
 - userTokens: { [userId]: { accessToken, refreshToken, expiryTime } }
-- userId defaults to 'default_user' (single-user app)
+
+### Real userId from Google sub
+- OAuth returns id_token (JWT). Backend decodes it (no library, no API call) to extract sub.
+- sub is Google's permanent stable user ID (e.g. "109234567890").
+- Tokens stored in Redis as tokens:<sub>. Browser stores userId=<sub> in localStorage.
+- On Render restart: browser sends real userId → getTokensForUser() lazy-loads from Redis.
+- This means NO startup pre-loading needed — first API request hydrates state automatically.
+- Falls back to state param || 'default_user' if id_token is absent.
+- REQUIRED: add 'openid' to OAuth scope to get id_token.
+
+### Upstash Redis helpers
+- redisSave(userId, tokens): HTTP GET /set/tokens:<userId>/<url-encoded-json>
+- redisLoad(userId): HTTP GET /get/tokens:<userId>
+- getTokensForUser(userId): checks memory first, then Redis (lazy load)
+- Env vars: UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN (add to Render dashboard)
+- Upstash REST API: uses HTTP GET for all commands (not standard Redis protocol)
+- Value must be encodeURIComponent(JSON.stringify(tokens))
+
+### Step count maximization
+- fetchStepsForDate queries TWO sources in parallel:
+  1. estimated_steps (derived:com.google.step_count.delta:...gms:estimated_steps)
+     — Google's deduplicated cross-source estimate, same as Google Fit app shows
+  2. Default dataTypeName aggregate (legacy fallback)
+- Returns Math.max of both — handles Garmin, Samsung Health, Fitbit, etc.
 
 ### Timezone-aware day boundaries
 - CRITICAL: Google Fit uses epoch ms. Must pass IST day boundaries, not UTC.
@@ -269,7 +297,60 @@ interface UserData {
 
 12. PERFECT WEEK DEFINITION: Days up to today all complete — do NOT require future
     pending dots to be complete. Check: days.filter(d => d.date <= today).every(...)
+
+13. RENDER EPHEMERAL FILESYSTEM: tokens.json is wiped on every Render restart/redeploy.
+    → Solution: Upstash Redis. tokens.json is only reliable for local dev.
+    → Always set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN in Render dashboard.
+
+14. DEFAULT_USER IS WRONG: Hardcoding 'default_user' means on Render restart the backend
+    can't lazy-load the right user's tokens. Fix: use real Google sub from id_token.
+    → Always store tokens under tokens:<sub> not tokens:default_user.
+    → Requires 'openid' scope in the OAuth request to get id_token.
+
+15. AUTH STATUS CHECK ≠ USER NEEDS RE-LOGIN: /auth/status returning false means the
+    backend doesn't have tokens in memory right now — not that the user is logged out.
+    Backend may have just restarted. Only a real 401 from a data sync confirms expiry.
+    → syncOnOpen and syncBackfill must NOT call clearAuthenticated() on status=false.
+    → Only clear auth on confirmed 401 from /api/steps or /api/steps/batch.
+
+16. BACKGROUND SYNC 401 MUST NOT LOG USER OUT: syncBackfill runs silently after app open.
+    If the backend just woke up on Render, tokens may not yet be loaded (race condition).
+    → Never call clearAuthenticated() from syncBackfill on any error.
+
+17. MON–SUN WEEKS BEAT PERSONAL ANCHORS: Rolling 7 days from install feels personalized
+    but is confusing — "what week are we on?" is unclear. Fixed calendar weeks (Mon–Sun)
+    are predictable, match user mental models, and are simpler to reason about in code.
+
+18. IDEMPOTENT DERIVED STATE > EVENT MUTATIONS: Points, milestones, and cycle status
+    should be fully re-derived from raw step data on every rebuildCycles() call.
+    → No double-award risk. No stale state. Easier to debug and migrate.
+
+19. UPSTASH REST API IS GET-BASED: Unlike Redis protocol, Upstash REST uses HTTP GET:
+    GET /set/<key>/<url-encoded-value> and GET /get/<key>
+    → Value must be encodeURIComponent(JSON.stringify(obj)).
+
+20. MONTHLY HISTORY — DOUBLE-COUNTING FIX: When computing points for a month view,
+    only count cycles whose startDate (Monday) falls within the target month.
+    → Never use cycle.days.some(d => month matches) — weeks spanning two months
+       would be counted twice.
+
+21. BUNDLE CONTENT HASH FOR CACHE-BUSTING: Without [contenthash] in bundle filename,
+    users load stale JS after a Render deploy even after force-refresh.
+    → Use bundle.[contenthash].js in webpack output config.
+
+22. RENDER ENV VARS ARE OS-LEVEL: webpack.config.js must read process.env directly,
+    not rely solely on dotenv(). Always check both sources in webpack config.
+
+23. RUBBER DUCK BEFORE IMPLEMENTING IS HIGHEST LEVERAGE: Every time rubber duck was
+    consulted before writing code, it caught design flaws (timezone bug, double-award
+    risk, isAuthenticated drift) that would have required full rewrites.
+    → Consult rubber duck AFTER planning but BEFORE implementing for non-trivial changes.
+
+24. KNOW DEPLOYMENT TARGET BEFORE DESIGNING: Render free tier = ephemeral FS, 15-min
+    sleep, OS-level env vars, no persistent disk. Knowing this upfront would have shaped
+    token persistence, env var handling, and wake-up UX from the start.
 `;
+
 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -583,13 +664,17 @@ Or use the \`step_streak_start_servers\` tool which does this for you.
                 additionalContext: `
 You are working on the Step Streak project. Key facts:
 - Active frontend: ${FRONTEND_DIR} (React+TS, deployed to Render)
-- Backend dir: ${BACKEND_DIR} (Node/Express, deployed to Render)
+- Backend dir: ${PROJECTS_DIR}/step-streak/backend (Node/Express, deployed to Render)
 - Frontend URL: ${FRONTEND_URL}
 - Backend URL: ${BACKEND_URL}
 - Schema version: 4 — Mon–Sun cycle weeks, firstOpenDate, totalPoints, currentCycle, pastCycles
 - step-streak-app/ is LEGACY — do not edit it; all active frontend work is in step-streak/frontend/
+- step-streak-backend/ is a LOCAL DEV COPY — the deployed backend is step-streak/backend/server.js
 - CRITICAL timezone rule: never use toISOString().split('T')[0] — always use getLocalDateString()
 - CRITICAL after large file rewrites: grep for duplicate symbol declarations (babel parse error symptom)
+- Token persistence: Upstash Redis (UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN in Render env)
+- userId: real Google sub extracted from id_token JWT — NOT hardcoded 'default_user'
+- Auth: syncBackfill must never call clearAuthenticated() — only explicit user sync 401s should clear auth
 - Call step_streak_get_context for full architecture reference.
 - Call step_streak_server_status to check if servers are up before debugging.
 `,
