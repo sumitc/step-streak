@@ -21,3 +21,17 @@ export const getLastNDates = (n: number): string[] => {
   }
   return dates;
 };
+
+// Returns all dates from startDate to endDate inclusive, oldest first
+export const getDateRange = (startDate: string, endDate: string): string[] => {
+  const dates: string[] = [];
+  const start = new Date(startDate + 'T12:00:00');
+  const end = new Date(endDate + 'T12:00:00');
+  if (start > end) return [];
+  const d = new Date(start);
+  while (d <= end) {
+    dates.push(getLocalDateString(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return dates;
+};

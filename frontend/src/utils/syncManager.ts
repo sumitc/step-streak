@@ -5,8 +5,9 @@ import {
   addDailySteps,
   batchUpdateSteps,
 } from './storage';
-import { getLocalDateString, getTimezone, getLastNDates } from './dateUtils';
+import { getLocalDateString, getTimezone, getLastNDates, getDateRange } from './dateUtils';
 import { checkAuthStatus, syncStepsFromBackend, syncStepsBatch } from './googleFit';
+import { DailySteps } from '../types';
 
 const SYNC_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -106,4 +107,34 @@ export const syncBackfill = async (): Promise<void> => {
     // bootstrapped tokens. Clearing auth would force the user to re-login on next open.
     console.warn('[syncBackfill] failed, will retry next sync:', error.message);
   }
+};
+
+// Fetches ALL days from firstOpenDate → today in batches of 14 and merges results.
+// Aborts without any changes if any batch fails. Use to reconcile diverged devices.
+export const recalculateFromScratch = async (): Promise<{ daysUpdated: number }> => {
+  const data = getStoredData();
+  if (!data.isAuthenticated) throw new Error('Not authenticated');
+
+  const today = getLocalDateString();
+  // Clamp firstOpenDate — guard against missing or future-dated value
+  const firstOpen = data.firstOpenDate && data.firstOpenDate <= today
+    ? data.firstOpenDate
+    : today;
+
+  const allDates = getDateRange(firstOpen, today);
+  if (allDates.length === 0) return { daysUpdated: 0 };
+
+  const BATCH_SIZE = 14;
+  const allResults: DailySteps[] = [];
+
+  for (let i = 0; i < allDates.length; i += BATCH_SIZE) {
+    const batch = allDates.slice(i, i + BATCH_SIZE);
+    const results = await syncStepsBatch(batch, data.userId, getTimezone());
+    allResults.push(...results);
+  }
+
+  // All batches succeeded — merge into local storage and rebuild cycles
+  batchUpdateSteps(allResults);
+  setLastSyncTimestamp();
+  return { daysUpdated: allResults.length };
 };
