@@ -87,6 +87,31 @@ async function redisLoad(userId) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Decode a Google id_token (JWT) and return the `sub` claim (permanent Google user ID).
+// No signature verification needed — we just received this token directly from Google's servers.
+function decodeIdToken(idToken) {
+  try {
+    const b64 = idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+    return payload.sub || null;
+  } catch {
+    return null;
+  }
+}
+
+// Lazy-load tokens for a userId: memory first, then Redis.
+// This means the backend doesn't need to pre-load anything on startup — the
+// userId coming in from the browser's first request is enough to hydrate state.
+async function getTokensForUser(userId) {
+  if (userTokens[userId]) return userTokens[userId];
+  const saved = await redisLoad(userId);
+  if (saved) {
+    userTokens[userId] = saved;
+    console.log(`[auth] lazy-loaded tokens for ${userId} from Redis`);
+  }
+  return userTokens[userId] || null;
+}
+
 function loadTokensFromFile() {
   try {
     if (fs.existsSync(TOKENS_FILE)) {
@@ -229,7 +254,7 @@ app.get('/auth/login', (req, res) => {
   authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
   authUrl.searchParams.set('redirect_uri', REDIRECT_URI);
   authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('scope', 'https://www.googleapis.com/auth/fitness.activity.read');
+  authUrl.searchParams.set('scope', 'openid https://www.googleapis.com/auth/fitness.activity.read');
   authUrl.searchParams.set('access_type', 'offline');
   authUrl.searchParams.set('prompt', 'consent');
 
@@ -258,8 +283,9 @@ app.get('/auth/callback', async (req, res) => {
       grant_type: 'authorization_code',
     });
 
-    const { access_token, refresh_token, expires_in } = tokenResponse.data;
-    const userId = state || 'default_user';
+    const { access_token, refresh_token, expires_in, id_token } = tokenResponse.data;
+    const sub = id_token ? decodeIdToken(id_token) : null;
+    const userId = sub || state || 'default_user';
 
     // Store tokens
     userTokens[userId] = {
@@ -304,8 +330,9 @@ app.post('/auth/callback', async (req, res) => {
       grant_type: 'authorization_code',
     });
 
-    const { access_token, refresh_token, expires_in } = tokenResponse.data;
-    const userId = state || 'default_user';
+    const { access_token, refresh_token, expires_in, id_token } = tokenResponse.data;
+    const sub = id_token ? decodeIdToken(id_token) : null;
+    const userId = sub || state || 'default_user';
 
     // Store tokens
     userTokens[userId] = {
@@ -314,6 +341,7 @@ app.post('/auth/callback', async (req, res) => {
       expiryTime: Date.now() + (expires_in * 1000),
     };
     saveTokens();
+    redisSave(userId, userTokens[userId]);
 
     res.json({
       success: true,
@@ -329,17 +357,17 @@ app.post('/auth/callback', async (req, res) => {
 // API Routes
 
 // Auth status — lets the frontend verify tokens are still valid without a full sync
-app.get('/auth/status', (req, res) => {
+app.get('/auth/status', async (req, res) => {
   const { userId = 'default_user' } = req.query;
-  const stored = userTokens[userId];
+  const stored = await getTokensForUser(userId);
   res.json({ authenticated: !!(stored && stored.refreshToken) });
 });
 
 // Returns the current refresh token so you can set GOOGLE_REFRESH_TOKEN in Render once.
 // After that the backend bootstraps itself on every restart — no more re-logins.
-app.get('/auth/export-token', (req, res) => {
+app.get('/auth/export-token', async (req, res) => {
   const { userId = 'default_user' } = req.query;
-  const stored = userTokens[userId];
+  const stored = await getTokensForUser(userId);
   if (!stored?.refreshToken) {
     return res.status(404).json({ error: 'No token found. Please log in first.' });
   }
@@ -352,7 +380,8 @@ app.get('/auth/export-token', (req, res) => {
 app.post('/api/steps', async (req, res) => {
   const { userId = 'default_user', date, timezone = 'UTC' } = req.body;
 
-  if (!userTokens[userId]) {
+  const tokens = await getTokensForUser(userId);
+  if (!tokens) {
     return res.status(401).json({ error: 'Not authenticated. Please login first.' });
   }
 
@@ -380,7 +409,8 @@ app.post('/api/steps', async (req, res) => {
 app.post('/api/steps/batch', async (req, res) => {
   const { userId = 'default_user', dates, timezone = 'UTC' } = req.body;
 
-  if (!userTokens[userId]) {
+  const tokens = await getTokensForUser(userId);
+  if (!tokens) {
     return res.status(401).json({ error: 'Not authenticated. Please login first.' });
   }
 
@@ -426,6 +456,11 @@ app.post('/api/steps/batch', async (req, res) => {
 
 app.post('/api/refresh-token', async (req, res) => {
   const { userId = 'default_user' } = req.body;
+
+  const tokens = await getTokensForUser(userId);
+  if (!tokens) {
+    return res.status(401).json({ error: 'Not authenticated. Please login first.' });
+  }
 
   try {
     await refreshAccessToken(userId);
