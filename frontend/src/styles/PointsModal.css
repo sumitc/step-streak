@@ -1,0 +1,239 @@
+/* ── Backdrop ──────────────────────────────────────────────────────────── */
+.pm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: pm-fade-in 0.15s ease;
+}
+
+@keyframes pm-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Bottom sheet ──────────────────────────────────────────────────────── */
+.pm-sheet {
+  background: #1a1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 480px;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 0 0 env(safe-area-inset-bottom, 16px);
+  animation: pm-slide-up 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes pm-slide-up {
+  from { transform: translateY(40px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ── Header ────────────────────────────────────────────────────────────── */
+.pm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pm-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #FFD700;
+  letter-spacing: 0.5px;
+}
+
+.pm-close {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.pm-close:hover { background: rgba(255, 255, 255, 0.2); }
+
+/* ── Sections ──────────────────────────────────────────────────────────── */
+.pm-section {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.pm-section--last {
+  border-bottom: none;
+  padding-bottom: 20px;
+}
+
+.pm-section-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 12px;
+}
+
+/* ── Formula grid ──────────────────────────────────────────────────────── */
+.pm-formula-grid {
+  display: grid;
+  grid-template-columns: 1.4rem 3.5rem 1fr;
+  row-gap: 9px;
+  column-gap: 8px;
+  align-items: center;
+}
+
+.pm-formula-icon { font-size: 1rem; text-align: center; }
+
+.pm-formula-pts {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #FFD700;
+  white-space: nowrap;
+}
+
+.pm-formula-desc {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* ── Week dots ─────────────────────────────────────────────────────────── */
+.pm-week-dots {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.pm-week-dot-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.pm-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+.pm-dot--complete  { background: #4ade80; box-shadow: 0 0 6px rgba(74, 222, 128, 0.5); }
+.pm-dot--missed    { background: #f87171; opacity: 0.7; }
+.pm-dot--pending   { background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255,255,255,0.2); }
+
+.pm-dot-label {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 500;
+}
+
+.pm-week-pts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.pm-badge {
+  font-size: 0.7rem;
+  background: rgba(255, 215, 0, 0.12);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  color: #FFD700;
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+
+.pm-week-earned {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  margin-left: auto;
+}
+
+.pm-motivation {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.05);
+  border-left: 3px solid #FFD700;
+  border-radius: 0 8px 8px 0;
+  padding: 8px 12px;
+  line-height: 1.4;
+}
+
+/* ── Past weeks ────────────────────────────────────────────────────────── */
+.pm-past-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pm-past-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pm-past-dots {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+
+.pm-mini-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.pm-mini-dot--complete { background: #4ade80; }
+.pm-mini-dot--missed   { background: #f87171; opacity: 0.6; }
+.pm-mini-dot--pending  { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); }
+
+.pm-past-pts {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  min-width: 48px;
+  text-align: right;
+}
+
+/* ── Recalculate button ────────────────────────────────────────────────── */
+.pm-recalc-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+  margin-bottom: 8px;
+}
+
+.pm-recalc-btn--idle    { background: rgba(255, 215, 0, 0.15); color: #FFD700; border: 1px solid rgba(255,215,0,0.3); }
+.pm-recalc-btn--running { background: rgba(255, 255, 255, 0.07); color: rgba(255,255,255,0.5); cursor: not-allowed; }
+.pm-recalc-btn--done    { background: rgba(74, 222, 128, 0.15); color: #4ade80; border: 1px solid rgba(74,222,128,0.3); }
+.pm-recalc-btn--error   { background: rgba(248, 113, 113, 0.15); color: #f87171; border: 1px solid rgba(248,113,113,0.3); }
+
+.pm-recalc-btn--idle:hover { background: rgba(255, 215, 0, 0.25); }
+
+.pm-recalc-hint {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.35);
+  text-align: center;
+  margin: 0;
+  line-height: 1.4;
+}

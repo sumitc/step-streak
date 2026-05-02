@@ -5,9 +5,10 @@ interface PointsCounterProps {
   points: number;
   animate?: boolean; // trigger count-up when true
   onAnimationDone?: () => void;
+  onClick?: () => void;
 }
 
-const PointsCounter: React.FC<PointsCounterProps> = ({ points, animate, onAnimationDone }) => {
+const PointsCounter: React.FC<PointsCounterProps> = ({ points, animate, onAnimationDone, onClick }) => {
   const [displayed, setDisplayed] = useState(points);
   const prevPointsRef = useRef(points);
   const rafRef = useRef<number | null>(null);
@@ -51,7 +52,12 @@ const PointsCounter: React.FC<PointsCounterProps> = ({ points, animate, onAnimat
   }, [points]);
 
   return (
-    <div className={`points-counter ${glowing ? 'points-counter--glow' : ''}`} title="Your points">
+    <div
+      className={`points-counter ${glowing ? 'points-counter--glow' : ''}`}
+      title="Tap to see points breakdown"
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+    >
       <span className="points-counter__icon">💎</span>
       <span className="points-counter__value">{displayed.toLocaleString()}</span>
     </div>

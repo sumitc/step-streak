@@ -2,10 +2,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { UserData } from '../types';
 import { getStoredData, addDailySteps, setAuthenticated } from '../utils/storage';
 import { getStepsFromGoogleFit } from '../utils/googleFit';
-import { syncOnOpen, syncBackfill, forceSyncToday, recalculateFromScratch } from '../utils/syncManager';
+import { syncOnOpen, syncBackfill, forceSyncToday } from '../utils/syncManager';
 import { getLocalDateString } from '../utils/dateUtils';
 import StreakDots from './StreakDots';
 import PointsCounter from './PointsCounter';
+import PointsModal from './PointsModal';
 import MonthChart from './MonthChart';
 import '../styles/Dashboard.css';
 
@@ -16,7 +17,7 @@ const Dashboard: React.FC = () => {
   const [todaySteps, setTodaySteps] = useState(0);
   const [stepsInput, setStepsInput] = useState('');
   const [syncLoading, setSyncLoading] = useState(false);
-  const [recalcLoading, setRecalcLoading] = useState(false);
+  const [showPointsModal, setShowPointsModal] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [celebrating, setCelebrating] = useState(false);
@@ -145,24 +146,6 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handleRecalculate = async () => {
-    if (!window.confirm(
-      `Recalculate all points from Google Fit history?\n\nThis re-fetches every day since ${data?.firstOpenDate ?? 'the start'} and merges it with local data. It may take up to a minute.`
-    )) return;
-    setRecalcLoading(true);
-    try {
-      const { daysUpdated } = await recalculateFromScratch();
-      refreshFromStorage();
-      showSyncStatus('done');
-      console.log(`[recalculate] updated ${daysUpdated} days`);
-    } catch (error) {
-      console.error('Recalculate error:', error);
-      showSyncStatus('error');
-    } finally {
-      setRecalcLoading(false);
-    }
-  };
-
   if (!data) return <div className="loading">Loading...</div>;
 
   const today = getLocalDateString();
@@ -189,7 +172,7 @@ const Dashboard: React.FC = () => {
             <p>Daily 8K step challenge</p>
           </div>
           <div className="header-right">
-            <PointsCounter points={data.totalPoints} />
+            <PointsCounter points={data.totalPoints} onClick={() => setShowPointsModal(true)} />
             <div className="sync-wrap">
               {syncStatus !== 'idle' && (
                 <span className={`sync-status-chip ${syncStatus}`}>
@@ -226,7 +209,7 @@ const Dashboard: React.FC = () => {
           onDaySelect={(date) => setViewingDate(date)}
         />
 
-        {/* History + Recalculate row */}
+        {/* History button */}
         <div className="history-row">
           <button
             className="history-btn"
@@ -234,16 +217,6 @@ const Dashboard: React.FC = () => {
           >
             📊 History
           </button>
-          {isAuthenticated && (
-            <button
-              className="history-btn"
-              onClick={handleRecalculate}
-              disabled={recalcLoading}
-              title="Re-fetch all history from Google Fit and recalculate points"
-            >
-              {recalcLoading ? '⏳ Recalculating…' : '🔄 Recalculate Points'}
-            </button>
-          )}
         </div>
 
         {/* Main: Circular progress */}
@@ -324,6 +297,16 @@ const Dashboard: React.FC = () => {
           onClose={() => setMonthViewDate(null)}
           onMonthChange={setMonthViewDate}
           onDataFetched={refreshFromStorage}
+        />
+      )}
+
+      {/* Points breakdown modal */}
+      {showPointsModal && (
+        <PointsModal
+          data={data}
+          isAuthenticated={isAuthenticated}
+          onClose={() => setShowPointsModal(false)}
+          onRecalculated={() => { refreshFromStorage(); setShowPointsModal(false); }}
         />
       )}
     </>
