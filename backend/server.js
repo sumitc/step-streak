@@ -211,6 +211,15 @@ function getTodayInTimezone(timezone) {
 //                         estimated_steps isn't populated for a particular day/device.
 //
 async function fetchStepsForDate(userId, dateStr, timezone) {
+  // Proactively refresh if access token is missing or expires within the next 60 seconds.
+  // This prevents the silent-zero bug where expired tokens cause both queries to 401-fail
+  // inside Promise.all, return 0, and never trigger the retry/refresh logic upstream.
+  const stored = userTokens[userId];
+  if (!stored.accessToken || Date.now() >= (stored.expiryTime || 0) - 60_000) {
+    console.log(`[steps] access token missing/expired for ${userId} — refreshing before fetch`);
+    await refreshAccessToken(userId);
+  }
+
   const token = userTokens[userId].accessToken;
   const { startTimeMillis, endTimeMillis } = getDayBoundaries(dateStr, timezone);
 
