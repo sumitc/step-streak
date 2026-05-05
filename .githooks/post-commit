@@ -1,0 +1,11 @@
+#!/bin/sh
+# Sync step-streak-developer extension to user-level Copilot directory after every commit.
+# Only copies if the extension file was changed in this commit.
+
+EXTENSION_SRC=".github/extensions/step-streak-developer/extension.mjs"
+EXTENSION_DEST="$HOME/.copilot/extensions/step-streak-developer/extension.mjs"
+
+if git diff-tree --no-commit-id -r --name-only HEAD | grep -q "$EXTENSION_SRC"; then
+  cp "$EXTENSION_SRC" "$EXTENSION_DEST" && \
+    echo "✓ Synced step-streak extension → $EXTENSION_DEST"
+fi
