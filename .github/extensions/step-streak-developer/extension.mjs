@@ -349,6 +349,22 @@ interface UserData {
 24. KNOW DEPLOYMENT TARGET BEFORE DESIGNING: Render free tier = ephemeral FS, 15-min
     sleep, OS-level env vars, no persistent disk. Knowing this upfront would have shaped
     token persistence, env var handling, and wake-up UX from the start.
+
+25. SILENT ZERO IN PROMISE.ALL IS DANGEROUS: If Google Fit API calls are made inside
+    Promise.all with catch-returning-0, a 401 (expired token) looks identical to a
+    genuine zero-step day. The upstream retry/refresh logic will never fire — it's dead.
+    → Never swallow auth errors inside Promise.all when 0 is a valid success value.
+    → Fix: check token expiry proactively BEFORE any Google API call:
+      if (!token.accessToken || Date.now() >= token.expiryTime - 60_000) { await refreshAccessToken() }
+
+26. WHEN REFACTORING, TRACE THE FULL ERROR PROPAGATION PATH: Adding Promise.all with
+    silent catches broke the contract that fetchStepsForDate would throw on 401 — which
+    the endpoint handlers depended on for retry logic. The bug only showed after 1 hour
+    (token expiry), not immediately.
+    → After any refactor that changes error handling inside a function, ask:
+      "Does anything upstream depend on this function throwing on specific errors?"
+    → Rubber duck the refactor even if it seems small — this class of bug is invisible
+      until token expiry, making it hard to catch in quick manual testing.
 `;
 
 
